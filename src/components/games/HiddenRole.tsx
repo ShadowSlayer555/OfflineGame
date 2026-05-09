@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { GameMessage } from '../../types';
-import { Moon, Sun, Skull, Shield, Search, User, Key, Play } from 'lucide-react';
+import { Moon, Sun, Skull, Shield, Search, User, Key, Play, Timer, MessageSquare, Send } from 'lucide-react';
 
 interface HiddenRoleProps {
   channel: RTCDataChannel;
@@ -19,6 +19,14 @@ interface Player {
   isAlive: boolean;
 }
 
+interface WhisperMessage {
+  id: string;
+  fromId: string;
+  fromName: string;
+  toId: string;
+  text: string;
+}
+
 // Minimal sync state sent to the guest
 interface SyncState {
   phase: Phase;
@@ -29,6 +37,9 @@ interface SyncState {
   myNightResult: string | null;
   winnerInfo: { winner: string, message: string } | null;
   lynchResultInfo: { message: string } | null;
+  phaseEndTime: number | null;
+  currentVotes: Record<string, string>;
+  whispers: WhisperMessage[];
 }
 
 const ROLE_NAMES: Record<Role, string> = {
@@ -61,12 +72,19 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
   const [nightActions, setNightActions] = useState<Record<string, string>>({}); // actor -> target
   const [votes, setVotes] = useState<Record<string, string>>({}); // voter -> target
 
+  const [phaseEndTime, setPhaseEndTime] = useState<number | null>(null);
+  const [whispers, setWhispers] = useState<WhisperMessage[]>([]);
+
   // --------- GUEST AND HOST SHARED VIEW STATE ---------
   const [syncState, setSyncState] = useState<SyncState | null>(null);
 
   // Local user selection
   const [localSelection, setLocalSelection] = useState<string>('');
   const [hasSubmittedLocalAction, setHasSubmittedLocalAction] = useState(false);
+
+  // Local chat state
+  const [chatTarget, setChatTarget] = useState<string>('');
+  const [chatMessage, setChatMessage] = useState<string>('');
 
   const myId = isHost ? 'player-host' : 'player-joiner';
 
@@ -90,7 +108,10 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
     currentLog: string[],
     currentWinner: any,
     currentLynch: any,
-    guestNightResult: string | null = null
+    guestNightResult: string | null = null,
+    endTime: number | null = null,
+    currentVotesPayload: Record<string, string> = {},
+    currentWhispers: WhisperMessage[] = []
   ) => {
     if (!isHost) return;
 
@@ -101,6 +122,9 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
       log: currentLog,
       winnerInfo: currentWinner,
       lynchResultInfo: currentLynch,
+      phaseEndTime: endTime,
+      currentVotes: currentVotesPayload,
+      whispers: currentWhispers.filter(w => w.fromId === 'player-joiner' || w.toId === 'player-joiner'),
       myRole: currentPlayers.find(p => p.id === 'player-joiner')?.role || null,
       myNightResult: guestNightResult,
       players: currentPlayers.map(p => ({
@@ -122,6 +146,9 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
       log: currentLog,
       winnerInfo: currentWinner,
       lynchResultInfo: currentLynch,
+      phaseEndTime: endTime,
+      currentVotes: currentVotesPayload,
+      whispers: currentWhispers.filter(w => w.fromId === 'player-host' || w.toId === 'player-host'),
       myRole: currentPlayers.find(p => p.id === 'player-host')?.role || null,
       myNightResult: null, // Host gets results directly in log or local state
       players: currentPlayers.map(p => ({
@@ -154,14 +181,25 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
           setNightActions(prev => ({ ...prev, [data.actorId]: data.targetId }));
         }
         else if (data.type === 'SUBMIT_VOTE' && isHost) {
-          setVotes(prev => ({ ...prev, [data.voterId]: data.targetId }));
+          setVotes(prev => {
+            const nextVotes = { ...prev, [data.voterId]: data.targetId };
+            broadcastSyncState(players, phase, dayCount, log, winnerInfo, lynchResultInfo, null, phaseEndTime, nextVotes, whispers);
+            return nextVotes;
+          });
+        }
+        else if (data.type === 'SUBMIT_WHISPER' && isHost) {
+          setWhispers(prev => {
+            const nextWhispers = [...prev, data.whisper];
+            broadcastSyncState(players, phase, dayCount, log, winnerInfo, lynchResultInfo, null, phaseEndTime, votes, nextWhispers);
+            return nextWhispers;
+          });
         }
       }
     };
 
     channel.addEventListener('message', handleMessage);
     return () => channel.removeEventListener('message', handleMessage);
-  }, [channel, isHost, syncState?.phase]);
+  }, [channel, isHost, syncState?.phase, players, phase, dayCount, log, winnerInfo, lynchResultInfo, phaseEndTime, votes, whispers, broadcastSyncState]);
 
   // --- HOST LOGIC: Starting the game ---
   const startGame = () => {
@@ -199,17 +237,42 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
     setLynchResultInfo(null);
     setLocalSelection('');
     setHasSubmittedLocalAction(false);
+    setWhispers([]);
+    
+    // Set timer
+    const endTime = Date.now() + 60000;
+    setPhaseEndTime(endTime);
     
     // Initial sync
-    broadcastSyncState(newPlayers, 'NIGHT', 1, ["The game has started. Everyone goes to sleep..."], null, null);
+    broadcastSyncState(newPlayers, 'NIGHT', 1, ["The game has started. Everyone goes to sleep..."], null, null, null, endTime, {}, []);
   };
+
+  // --- HOST LOGIC: Check Timer ---
+  useEffect(() => {
+    if (!isHost || !phaseEndTime) return;
+    if (phase === 'GAME_OVER' || phase === 'LYNCH_RESULT' || phase === 'SETUP') return;
+
+    const checkTime = () => {
+      if (Date.now() >= phaseEndTime) {
+        if (phase === 'NIGHT') {
+          resolveNight();
+        } else if (phase === 'VOTING') {
+          resolveVoting();
+        } else if (phase === 'DAY_SUMMARY') {
+          proceedToVoting();
+        }
+      }
+    };
+
+    const interval = setInterval(checkTime, 1000);
+    return () => clearInterval(interval);
+  }, [isHost, phaseEndTime, phase, players, nightActions, votes]);
 
   // --- HOST LOGIC: Check Night Actions ---
   useEffect(() => {
     if (!isHost || phase !== 'NIGHT') return;
 
     const aliveHumans = players.filter(p => !p.isBot && p.isAlive);
-    const humansWithAction = aliveHumans.filter(p => p.role === 'MURDERER' || p.role === 'DETECTIVE' || p.role === 'SHERIFF');
     
     // Check if humans have submitted (Villager/Jester just need to submit 'SKIP')
     const allHumansSubmitted = aliveHumans.every(p => nightActions[p.id] !== undefined);
@@ -223,6 +286,12 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
   const resolveNight = () => {
     const finalActions: Record<string, string> = { ...nightActions };
     const alivePlayers = players.filter(p => p.isAlive);
+
+    alivePlayers.forEach(p => {
+      if (!p.isBot && finalActions[p.id] === undefined) {
+        finalActions[p.id] = 'SKIP';
+      }
+    });
 
     // Bot night actions
     alivePlayers.forEach(p => {
@@ -290,7 +359,10 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
     setVotes({}); // reset votes for day
     setLocalSelection('');
     setHasSubmittedLocalAction(false);
-    broadcastSyncState(newPlayers, 'DAY_SUMMARY', dayCount, newLog, null, null, guestInvestigationResult);
+    
+    const endTime = Date.now() + 60000;
+    setPhaseEndTime(endTime);
+    broadcastSyncState(newPlayers, 'DAY_SUMMARY', dayCount, newLog, null, null, guestInvestigationResult, endTime, {}, whispers);
   };
 
   // --- HOST LOGIC: Check Votes ---
@@ -309,6 +381,12 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
   const resolveVoting = () => {
     const finalVotes: Record<string, string> = { ...votes };
     const alivePlayers = players.filter(p => p.isAlive);
+
+    alivePlayers.forEach(p => {
+      if (!p.isBot && finalVotes[p.id] === undefined) {
+        finalVotes[p.id] = 'SKIP';
+      }
+    });
 
     // Bot voting
     alivePlayers.forEach(p => {
@@ -376,9 +454,13 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
     setPhase('NIGHT');
     setNightActions({});
     setVotes({});
+    setWhispers([]);
     setLocalSelection('');
     setHasSubmittedLocalAction(false);
-    broadcastSyncState(players, 'NIGHT', dayCount + 1, ["A new night begins..."], null, null);
+    
+    const endTime = Date.now() + 60000;
+    setPhaseEndTime(endTime);
+    broadcastSyncState(players, 'NIGHT', dayCount + 1, ["A new night begins..."], null, null, null, endTime, {}, []);
   };
 
   const proceedToVoting = () => {
@@ -386,7 +468,10 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
     setPhase('VOTING');
     setLocalSelection('');
     setHasSubmittedLocalAction(false);
-    broadcastSyncState(players, 'VOTING', dayCount, log, null, null);
+    
+    const endTime = Date.now() + 60000;
+    setPhaseEndTime(endTime);
+    broadcastSyncState(players, 'VOTING', dayCount, log, null, null, null, endTime, {}, whispers);
   };
 
   const checkWinConditions = (currentPlayers: Player[]): boolean => {
@@ -438,6 +523,28 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
     }
   };
 
+  const submitWhisper = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatTarget || !chatMessage.trim()) return;
+    const msg: WhisperMessage = {
+      id: Date.now().toString() + Math.random().toString(),
+      fromId: myId,
+      fromName: uiState.players.find(p => p.id === myId)?.name || 'Unknown',
+      toId: chatTarget,
+      text: chatMessage.trim()
+    };
+    if (isHost) {
+       setWhispers(prev => {
+          const next = [...prev, msg];
+          broadcastSyncState(players, phase, dayCount, log, winnerInfo, lynchResultInfo, null, phaseEndTime, votes, next);
+          return next;
+       });
+    } else {
+       sendMessage({ type: 'SUBMIT_WHISPER', whisper: msg });
+    }
+    setChatMessage('');
+  };
+
   // --- RENDER HELPERS ---
   const uiState = syncState || {
     phase: 'SETUP',
@@ -447,13 +554,32 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
     myRole: null as Role | null,
     myNightResult: null,
     winnerInfo: null,
-    lynchResultInfo: null
+    lynchResultInfo: null,
+    phaseEndTime: null as number | null,
+    currentVotes: {} as Record<string, string>,
+    whispers: [] as WhisperMessage[],
   };
 
   const aliveTargets = uiState.players.filter(p => p.isAlive && p.id !== myId);
   const amIAlive = uiState.players.find(p => p.id === myId)?.isAlive ?? false;
 
   const requiresTarget = ['MURDERER', 'DETECTIVE', 'SHERIFF'].includes(uiState.myRole || '');
+
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+
+  useEffect(() => {
+    if (!uiState.phaseEndTime) {
+      setTimeLeft(0);
+      return;
+    }
+    const tick = () => {
+      const diff = Math.max(0, Math.floor((uiState.phaseEndTime! - Date.now()) / 1000));
+      setTimeLeft(diff);
+    };
+    tick(); // run immediately
+    const int = setInterval(tick, 1000);
+    return () => clearInterval(int);
+  }, [uiState.phaseEndTime]);
 
   return (
     <div className="flex flex-col items-center justify-start py-6 w-full max-w-md mx-auto min-h-[70vh] gap-4">
@@ -465,9 +591,16 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
           &larr; Lobby
         </button>
         {uiState.phase !== 'SETUP' && (
-           <span className="font-bold text-neutral-800 bg-neutral-200/60 px-4 py-1.5 rounded-full text-xs font-mono uppercase tracking-widest border border-neutral-300">
-             Day {uiState.dayCount}
-           </span>
+           <div className="flex items-center gap-3">
+             {uiState.phaseEndTime && timeLeft > 0 && (
+               <span className="font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full text-xs font-mono tracking-widest border border-indigo-200 flex items-center gap-1">
+                 <Timer className="w-3 h-3" /> {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+               </span>
+             )}
+             <span className="font-bold text-neutral-800 bg-neutral-200/60 px-4 py-1.5 rounded-full text-xs font-mono uppercase tracking-widest border border-neutral-300">
+               Day {uiState.dayCount}
+             </span>
+           </div>
         )}
       </div>
 
@@ -663,12 +796,26 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
                <div className="space-y-3 mb-6">
                  <label className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${localSelection === 'SKIP' || localSelection === '' ? 'border-indigo-600 bg-indigo-50/50' : 'border-neutral-200 bg-neutral-50 hover:border-indigo-200'}`}>
                    <input type="radio" className="w-5 h-5 accent-indigo-600" name="vote" value="SKIP" checked={localSelection === 'SKIP' || localSelection === ''} onChange={e => setLocalSelection(e.target.value)} />
-                   <span className="font-bold text-neutral-900 tracking-tight">Skip Vote</span>
+                   <div className="flex-1">
+                     <span className="font-bold text-neutral-900 tracking-tight">Skip Vote</span>
+                     {Object.entries(uiState.currentVotes).filter(([, tid]) => tid === 'SKIP').length > 0 && (
+                       <div className="mt-1 text-xs text-neutral-500 font-medium leading-snug">
+                         Voters: {Object.entries(uiState.currentVotes).filter(([, tid]) => tid === 'SKIP').map(([vid]) => uiState.players.find(p => p.id === vid)?.name).join(', ')}
+                       </div>
+                     )}
+                   </div>
                  </label>
                  {aliveTargets.map(tgt => (
-                    <label key={tgt.id} className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${localSelection === tgt.id ? 'border-indigo-600 bg-indigo-50/50' : 'border-neutral-200 bg-neutral-50 hover:border-indigo-200'}`}>
-                      <input type="radio" className="w-5 h-5 accent-indigo-600" name="vote" value={tgt.id} checked={localSelection === tgt.id} onChange={e => setLocalSelection(e.target.value)} />
-                      <span className="font-bold text-neutral-900 tracking-tight">{tgt.name}</span>
+                    <label key={tgt.id} className={`flex items-start gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${localSelection === tgt.id ? 'border-indigo-600 bg-indigo-50/50' : 'border-neutral-200 bg-neutral-50 hover:border-indigo-200'}`}>
+                      <input type="radio" className="w-5 h-5 mt-0.5 accent-indigo-600" name="vote" value={tgt.id} checked={localSelection === tgt.id} onChange={e => setLocalSelection(e.target.value)} />
+                      <div className="flex-1">
+                        <span className="font-bold text-neutral-900 tracking-tight">{tgt.name}</span>
+                        {Object.entries(uiState.currentVotes).filter(([, tid]) => tid === tgt.id).length > 0 && (
+                           <div className="mt-1 text-xs text-neutral-500 font-medium leading-snug">
+                             Voters: {Object.entries(uiState.currentVotes).filter(([, tid]) => tid === tgt.id).map(([vid]) => uiState.players.find(p => p.id === vid)?.name).join(', ')}
+                           </div>
+                        )}
+                      </div>
                     </label>
                  ))}
                </div>
@@ -752,6 +899,62 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
                Back to Setup
              </button>
           )}
+        </div>
+      )}
+
+      {(uiState.phase === 'DAY_SUMMARY' || uiState.phase === 'VOTING') && amIAlive && (
+        <div className="w-full mt-4 bg-white p-6 rounded-3xl shadow-sm border border-neutral-200/60 animate-in fade-in slide-in-from-bottom flex flex-col">
+          <h3 className="font-bold text-neutral-800 mb-4 uppercase text-xs tracking-widest flex items-center gap-2">
+            <MessageSquare className="w-4 h-4 text-indigo-500" /> Whisper Chat
+          </h3>
+          <div className="flex-1 min-h-[120px] max-h-[200px] overflow-y-auto mb-4 space-y-3 bg-neutral-50 p-4 rounded-2xl border border-neutral-100 placeholder:text-red">
+             {uiState.whispers.length === 0 ? (
+               <p className="text-sm text-neutral-400 italic text-center mt-8">No whispers yet. Send a secret message!</p>
+             ) : (
+               uiState.whispers.map(w => {
+                 const isMine = w.fromId === myId;
+                 return (
+                   <div key={w.id} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
+                      <div className="text-[10px] text-neutral-400 mb-1 font-bold uppercase tracking-widest px-1">
+                        {isMine ? `To ${uiState.players.find(p=>p.id===w.toId)?.name}` : `From ${w.fromName}`}
+                      </div>
+                      <div className={`px-4 py-2 rounded-2xl text-sm font-medium shadow-sm max-w-[85%] ${isMine ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white border border-neutral-200 text-neutral-800 rounded-bl-sm'}`}>
+                         {w.text}
+                      </div>
+                   </div>
+                 );
+               })
+             )}
+          </div>
+          <form className="flex flex-col gap-3" onSubmit={submitWhisper}>
+            <select
+               required
+               value={chatTarget}
+               onChange={e => setChatTarget(e.target.value)}
+               className="w-full p-3 border-2 border-neutral-200 rounded-xl bg-neutral-50 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-sm font-medium outline-none"
+             >
+               <option value="" disabled>Select whisper target...</option>
+               {aliveTargets.map(tgt => (
+                 <option key={tgt.id} value={tgt.id}>{tgt.name}</option>
+               ))}
+            </select>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Type a secret..."
+                value={chatMessage}
+                onChange={e => setChatMessage(e.target.value)}
+                className="flex-1 p-3 border-2 border-neutral-200 rounded-xl bg-neutral-50 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-sm font-medium outline-none"
+              />
+              <button 
+                type="submit"
+                disabled={!chatTarget || !chatMessage.trim()}
+                className="p-3 bg-indigo-600 text-white rounded-xl disabled:bg-neutral-200 disabled:text-neutral-400 shadow-sm hover:bg-indigo-700 transition-all active:scale-[0.98]"
+              >
+                <Send className="w-5 h-5"/>
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

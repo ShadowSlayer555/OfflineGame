@@ -1,10 +1,10 @@
 import LZString from 'lz-string';
 
 // Helper to wait until ICE gathering is complete
-export async function getCompleteLocalDescription(peer: RTCPeerConnection): Promise<string> {
+export async function getCompleteLocalDescription(peer: RTCPeerConnection, meta: any = null): Promise<string> {
   return new Promise((resolve) => {
     if (peer.iceGatheringState === 'complete') {
-      const sdpString = JSON.stringify(peer.localDescription);
+      const sdpString = JSON.stringify({ ...peer.localDescription?.toJSON(), meta });
       resolve(LZString.compressToEncodedURIComponent(sdpString));
       return;
     }
@@ -12,7 +12,7 @@ export async function getCompleteLocalDescription(peer: RTCPeerConnection): Prom
     const checkState = () => {
       if (peer.iceGatheringState === 'complete') {
         peer.removeEventListener('icegatheringstatechange', checkState);
-        const sdpString = JSON.stringify(peer.localDescription);
+        const sdpString = JSON.stringify({ ...peer.localDescription?.toJSON(), meta });
         resolve(LZString.compressToEncodedURIComponent(sdpString));
       }
     };
@@ -22,14 +22,14 @@ export async function getCompleteLocalDescription(peer: RTCPeerConnection): Prom
     setTimeout(() => {
       if (peer.iceGatheringState !== 'complete') {
         peer.removeEventListener('icegatheringstatechange', checkState);
-        const sdpString = JSON.stringify(peer.localDescription);
+        const sdpString = JSON.stringify({ ...peer.localDescription?.toJSON(), meta });
         resolve(LZString.compressToEncodedURIComponent(sdpString));
       }
     }, 2000);
   });
 }
 
-export function decodeDescription(encoded: string): RTCSessionDescriptionInit {
+export function decodeDescription(encoded: string): RTCSessionDescriptionInit & { meta?: any } {
   const decompressed = LZString.decompressFromEncodedURIComponent(encoded);
   if (!decompressed) throw new Error("Invalid or corrupted QR data");
   return JSON.parse(decompressed);

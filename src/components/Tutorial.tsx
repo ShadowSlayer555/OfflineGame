@@ -8,7 +8,7 @@ export function Tutorial({ onComplete }: { onComplete: () => void }) {
   const steps = [
     {
       title: "1. Install the App",
-      desc: "For the best offline experience, install this website to your home screen using your browser's 'Add to Home Screen' or 'Install App' option. Alternatively, if you load the page once while online, it will work offline after.",
+      desc: "For the best offline experience, open this website in Google Chrome, tap the menu (three dots), and select 'Add to Home screen'. You can now open it without internet anytime!",
       icon: <Globe className="w-12 h-12 text-blue-500" />
     },
     {

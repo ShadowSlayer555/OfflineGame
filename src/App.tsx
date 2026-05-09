@@ -2,7 +2,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useRef, useState } from 'react';
 import { QRScanner } from './components/QRScanner';
 import { decodeDescription, getCompleteLocalDescription, rtcConfig } from './lib/webrtc';
-import { Smartphone, WifiOff, ScanLine, QrCode, BookOpen } from 'lucide-react';
+import { Smartphone, WifiOff, ScanLine, QrCode, BookOpen, Plus, ChevronRight, User } from 'lucide-react';
 import { GameType, BaseMessage } from './types';
 
 // Components
@@ -16,8 +16,11 @@ import { HiddenRole } from './components/games/HiddenRole';
 type AppState =
   | 'IDLE'
   | 'TUTORIAL'
+  | 'HOST_CHOOSE_NAME'
   | 'HOSTING_OFFER'
   | 'HOSTING_SCAN_ANSWER'
+  | 'HOSTING_GUEST_CONNECTED'
+  | 'JOIN_CHOOSE_NAME'
   | 'JOIN_SCAN_OFFER'
   | 'JOIN_ANSWER'
   | 'LOBBY'
@@ -28,17 +31,32 @@ export default function App() {
   const [localData, setLocalData] = useState<string>(''); // Base64 compressed SDP
   const [errorTimer, setErrorTimer] = useState<string | null>(null);
 
+  // Identity
+  const [playerName, setPlayerName] = useState<string>('');
+  const [activeGuestId, setActiveGuestId] = useState<string | null>(null);
+  const [connectedGuests, setConnectedGuests] = useState<{id: string, name: string}[]>([]);
+
   // Game state
   const [selectedGame, setSelectedGame] = useState<GameType | null>(null);
 
-  const peerRef = useRef<RTCPeerConnection | null>(null);
-  const channelRef = useRef<RTCDataChannel | null>(null);
+  const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const channelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
 
-  const isHost = peerRef.current?.localDescription?.type === 'offer';
+  // We consider ourselves host if we ever created an offer
+  const isHost = appState === 'HOST_CHOOSE_NAME' || appState.startsWith('HOST') || (appState === 'LOBBY' && connectedGuests.length > 0) || (appState === 'PLAYING' && connectedGuests.length > 0);
+
+  // Broadcast to all channels
+  const broadcast = (msg: any) => {
+    channelsRef.current.forEach(channel => {
+      if (channel.readyState === 'open') {
+        channel.send(JSON.stringify(msg));
+      }
+    });
+  };
 
   // Handle global lobby messages when in LOBBY state
   useEffect(() => {
-    if ((appState === 'LOBBY' || appState === 'PLAYING') && channelRef.current) {
+    if ((appState === 'LOBBY' || appState === 'PLAYING')) {
       const handleGlobalMessage = (event: MessageEvent) => {
         try {
           const msg: BaseMessage = JSON.parse(event.data);
@@ -49,43 +67,55 @@ export default function App() {
             setAppState('PLAYING');
           } else if (msg.type === 'BACK_TO_LOBBY') {
             setAppState('LOBBY');
+          } else if (msg.type === 'GO_TO_LOBBY') {
+            setAppState('LOBBY');
           }
         } catch (e) {
           console.error("Failed to parse message", e);
         }
       };
 
-      const channel = channelRef.current;
-      channel.addEventListener('message', handleGlobalMessage);
-      return () => channel.removeEventListener('message', handleGlobalMessage);
+      channelsRef.current.forEach(channel => {
+        channel.addEventListener('message', handleGlobalMessage);
+      });
+      return () => {
+        channelsRef.current.forEach(channel => {
+          channel.removeEventListener('message', handleGlobalMessage);
+        });
+      };
     }
   }, [appState, isHost]);
 
   // Host sync lobby selection
   useEffect(() => {
-    if (appState === 'LOBBY' && isHost && channelRef.current?.readyState === 'open') {
-      channelRef.current.send(JSON.stringify({ type: 'LOBBY_STATE', payload: { game: selectedGame } }));
+    if (appState === 'LOBBY' && isHost) {
+      broadcast({ type: 'LOBBY_STATE', payload: { game: selectedGame } });
     }
   }, [selectedGame, appState, isHost]);
 
-  // Initialize Host
-  const startHosting = async () => {
+  const startHostingFlow = () => {
+    setAppState('HOST_CHOOSE_NAME');
+  };
+
+  const createHostOffer = async () => {
     try {
+      const guestId = `guest-${Date.now()}`;
+      setActiveGuestId(guestId);
+      
       const peer = new RTCPeerConnection(rtcConfig);
-      peerRef.current = peer;
+      peersRef.current.set(guestId, peer);
 
       const channel = peer.createDataChannel('game', { negotiated: true, id: 0 });
-      channelRef.current = channel;
+      channelsRef.current.set(guestId, channel);
 
-      channel.onopen = () => setAppState('LOBBY');
-      peer.onconnectionstatechange = () => {
-        if (peer.connectionState === 'connected') setAppState('LOBBY');
+      channel.onopen = () => {
+        setAppState('HOSTING_GUEST_CONNECTED');
       };
-
+      
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
 
-      const compressedOffer = await getCompleteLocalDescription(peer);
+      const compressedOffer = await getCompleteLocalDescription(peer, { hostName: playerName });
       setLocalData(compressedOffer);
       setAppState('HOSTING_OFFER');
     } catch (e: any) {
@@ -95,39 +125,46 @@ export default function App() {
 
   const hostScanAnswer = async (decodedSdp: string) => {
     try {
-      const peer = peerRef.current;
+      if (!activeGuestId) return;
+      const peer = peersRef.current.get(activeGuestId);
       if (!peer) return;
+      
       const desc = decodeDescription(decodedSdp);
+      const guestName = desc.meta?.guestName || `Guest ${connectedGuests.length + 1}`;
+      
       await peer.setRemoteDescription(desc);
-      setAppState('LOBBY');
+      setConnectedGuests(prev => [...prev, { id: activeGuestId, name: guestName }]);
+      setAppState('HOSTING_GUEST_CONNECTED');
     } catch (e: any) {
       console.warn("Invalid answer code", e);
     }
   };
 
-  const startJoin = () => {
-    setAppState('JOIN_SCAN_OFFER');
+  const startJoinFlow = () => {
+    setAppState('JOIN_CHOOSE_NAME');
   };
 
   const joinScanOffer = async (decodedSdp: string) => {
     try {
       const peer = new RTCPeerConnection(rtcConfig);
-      peerRef.current = peer;
+      const myId = 'host';
+      peersRef.current.set(myId, peer);
 
       const channel = peer.createDataChannel('game', { negotiated: true, id: 0 });
-      channelRef.current = channel;
-      channel.onopen = () => setAppState('LOBBY');
-      peer.onconnectionstatechange = () => {
-        if (peer.connectionState === 'connected') setAppState('LOBBY');
+      channelsRef.current.set(myId, channel);
+      
+      channel.onopen = () => {
+        // Wait for host to send GO_TO_LOBBY or just wait
       };
 
       const desc = decodeDescription(decodedSdp);
+      // could extrace hostName from desc.meta.hostName if needed
       await peer.setRemoteDescription(desc);
 
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
 
-      const compressedAnswer = await getCompleteLocalDescription(peer);
+      const compressedAnswer = await getCompleteLocalDescription(peer, { guestName: playerName });
       setLocalData(compressedAnswer);
       setAppState('JOIN_ANSWER');
     } catch (e: any) {
@@ -136,17 +173,25 @@ export default function App() {
   };
 
   const handleStartMatch = () => {
-    if (isHost && channelRef.current?.readyState === 'open') {
-      channelRef.current.send(JSON.stringify({ type: 'START_GAME' }));
+    if (isHost) {
+      broadcast({ type: 'START_GAME' });
       setAppState('PLAYING');
     }
   };
 
   const handleBackToLobby = () => {
-    if (channelRef.current?.readyState === 'open') {
-      channelRef.current.send(JSON.stringify({ type: 'BACK_TO_LOBBY' }));
+    if (isHost) {
+      broadcast({ type: 'BACK_TO_LOBBY' });
       setAppState('LOBBY');
     }
+  };
+
+  const clearConnections = () => {
+    peersRef.current.forEach(p => p.close());
+    peersRef.current.clear();
+    channelsRef.current.clear();
+    setConnectedGuests([]);
+    setActiveGuestId(null);
   };
 
   return (
@@ -161,7 +206,7 @@ export default function App() {
         {appState !== 'IDLE' && appState !== 'TUTORIAL' && appState !== 'PLAYING' && appState !== 'LOBBY' && (
           <button
             onClick={() => {
-              peerRef.current?.close();
+              clearConnections();
               setAppState('IDLE');
             }}
             className="text-sm font-medium text-neutral-600 hover:text-neutral-900 px-3 py-1.5 rounded-md hover:bg-neutral-100 transition-colors"
@@ -172,7 +217,7 @@ export default function App() {
         {(appState === 'LOBBY') && (
            <button
            onClick={() => {
-             peerRef.current?.close();
+             clearConnections();
              setAppState('IDLE');
              setSelectedGame(null);
            }}
@@ -215,13 +260,13 @@ export default function App() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <button
-                  onClick={startHosting}
+                  onClick={startHostingFlow}
                   className="w-full py-5 bg-neutral-900 text-white rounded-2xl shadow-lg shadow-neutral-900/20 font-bold text-lg hover:bg-neutral-800 active:scale-[0.98] transition-all"
                 >
                   Host Game
                 </button>
                 <button
-                  onClick={startJoin}
+                  onClick={startJoinFlow}
                   className="w-full py-5 bg-white text-neutral-900 border-2 border-neutral-200/80 rounded-2xl shadow-sm font-bold text-lg hover:border-neutral-300 hover:bg-neutral-50 active:scale-[0.98] transition-all"
                 >
                   Join Game
@@ -233,6 +278,54 @@ export default function App() {
 
         {appState === 'TUTORIAL' && (
           <Tutorial onComplete={() => setAppState('IDLE')} />
+        )}
+
+        {appState === 'HOST_CHOOSE_NAME' && (
+          <div className="space-y-6 text-center w-full animate-in fade-in zoom-in-95 duration-300">
+            <div>
+              <h2 className="text-3xl font-display font-bold mb-2 tracking-tight text-neutral-900">What's your name?</h2>
+              <p className="text-lg text-neutral-500 font-medium mb-8">Choose a name so players know who is hosting.</p>
+            </div>
+            <input 
+              type="text" 
+              autoFocus
+              placeholder="Your Name"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              className="w-full p-4 text-lg border-2 border-neutral-200 rounded-2xl bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all font-medium text-center outline-none"
+            />
+            <button
+              onClick={createHostOffer}
+              disabled={!playerName.trim()}
+              className="w-full mt-4 py-4 bg-indigo-600 text-white flex justify-center items-center gap-2 rounded-2xl shadow-lg shadow-indigo-600/20 font-bold text-lg hover:bg-indigo-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:active:scale-100"
+            >
+              Continue
+            </button>
+          </div>
+        )}
+
+        {appState === 'JOIN_CHOOSE_NAME' && (
+          <div className="space-y-6 text-center w-full animate-in fade-in zoom-in-95 duration-300">
+            <div>
+              <h2 className="text-3xl font-display font-bold mb-2 tracking-tight text-neutral-900">What's your name?</h2>
+              <p className="text-lg text-neutral-500 font-medium mb-8">Choose a name before joining the host.</p>
+            </div>
+            <input 
+              type="text" 
+              autoFocus
+              placeholder="Your Name"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              className="w-full p-4 text-lg border-2 border-neutral-200 rounded-2xl bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all font-medium text-center outline-none"
+            />
+            <button
+              onClick={() => setAppState('JOIN_SCAN_OFFER')}
+              disabled={!playerName.trim()}
+              className="w-full mt-4 py-4 bg-indigo-600 text-white flex justify-center items-center gap-2 rounded-2xl shadow-lg shadow-indigo-600/20 font-bold text-lg hover:bg-indigo-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:active:scale-100"
+            >
+              Scan Host QR
+            </button>
+          </div>
         )}
 
         {appState === 'HOSTING_OFFER' && (
@@ -262,6 +355,46 @@ export default function App() {
               <p className="text-lg text-neutral-500 font-medium mb-8">Scan the answer code on your friend's screen to connect.</p>
             </div>
             <QRScanner onScan={hostScanAnswer} />
+          </div>
+        )}
+
+        {appState === 'HOSTING_GUEST_CONNECTED' && (
+          <div className="space-y-6 text-center w-full flex flex-col items-center animate-in fade-in zoom-in-95 duration-300">
+             <div>
+              <h2 className="text-3xl font-display font-bold mb-2 tracking-tight text-neutral-900">Lobby</h2>
+              <p className="text-lg text-neutral-500 font-medium mb-8">Players joined to {playerName || 'Host'}</p>
+            </div>
+
+            <div className="w-full bg-white rounded-3xl shadow-sm border border-neutral-200 p-4 space-y-3 mb-6">
+               <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-xl border border-indigo-100">
+                  <User className="w-6 h-6 text-indigo-600" />
+                  <span className="font-bold text-indigo-900 text-lg">{playerName || 'Host'} (You)</span>
+               </div>
+               {connectedGuests.map((guest, i) => (
+                 <div key={guest.id} className="flex items-center gap-3 p-3 bg-neutral-50 rounded-xl border border-neutral-100 animate-in slide-in-from-right">
+                    <User className="w-6 h-6 text-neutral-500" />
+                    <span className="font-bold text-neutral-800 text-lg">{guest.name}</span>
+                 </div>
+               ))}
+            </div>
+
+            <div className="flex gap-4 w-full">
+              <button
+                onClick={createHostOffer}
+                className="flex-1 py-4 bg-white text-indigo-600 border-2 border-indigo-100 flex justify-center items-center gap-2 rounded-2xl shadow-sm font-bold text-lg hover:bg-indigo-50 active:scale-[0.98] transition-all"
+              >
+                <Plus className="w-5 h-5" /> Add More
+              </button>
+              <button
+                onClick={() => {
+                  broadcast({ type: 'GO_TO_LOBBY' });
+                  setAppState('LOBBY');
+                }}
+                className="flex-[2] py-4 bg-indigo-600 text-white flex justify-center items-center gap-2 rounded-2xl shadow-lg shadow-indigo-600/20 font-bold text-lg hover:bg-indigo-700 active:scale-[0.98] transition-all"
+              >
+                Next <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -302,17 +435,17 @@ export default function App() {
           />
         )}
 
-        {appState === 'PLAYING' && selectedGame === 'TAP_WAR' && channelRef.current && (
-           <TapWar channel={channelRef.current} isHost={isHost} onBackToLobby={handleBackToLobby} />
+        {appState === 'PLAYING' && selectedGame === 'TAP_WAR' && channelsRef.current.size > 0 && (
+           <TapWar channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />
         )}
-        {appState === 'PLAYING' && selectedGame === 'PONG' && channelRef.current && (
-           <Pong channel={channelRef.current} isHost={isHost} onBackToLobby={handleBackToLobby} />
+        {appState === 'PLAYING' && selectedGame === 'PONG' && channelsRef.current.size > 0 && (
+           <Pong channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />
         )}
-        {appState === 'PLAYING' && selectedGame === 'CHESS' && channelRef.current && (
-           <ChessGame channel={channelRef.current} isHost={isHost} onBackToLobby={handleBackToLobby} />
+        {appState === 'PLAYING' && selectedGame === 'CHESS' && channelsRef.current.size > 0 && (
+           <ChessGame channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />
         )}
-        {appState === 'PLAYING' && selectedGame === 'HIDDEN_ROLE' && channelRef.current && (
-           <HiddenRole channel={channelRef.current} isHost={isHost} onBackToLobby={handleBackToLobby} />
+        {appState === 'PLAYING' && selectedGame === 'HIDDEN_ROLE' && channelsRef.current.size > 0 && (
+           <HiddenRole channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />
         )}
         
       </main>
