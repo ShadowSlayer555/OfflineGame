@@ -3,8 +3,11 @@ import { GameMessage } from '../../types';
 import { Moon, Sun, Skull, Shield, Search, User, Key, Play, Timer, MessageSquare, Send } from 'lucide-react';
 
 interface HiddenRoleProps {
-  channel: RTCDataChannel;
+  channels: Map<string, RTCDataChannel>;
   isHost: boolean;
+  myId: string;
+  myName: string;
+  guests: {id: string, name: string}[];
   onBackToLobby: () => void;
 }
 
@@ -58,13 +61,13 @@ const ROLE_DESCRIPTIONS: Record<Role, string> = {
   VILLAGER: 'You have no special abilities. Use your wits to vote out the Murderer.',
 };
 
-export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) {
+export function HiddenRole({ channels, isHost, myId, myName, guests, onBackToLobby }: HiddenRoleProps) {
   // --------- HOST ONLY STATE ---------
   const [players, setPlayers] = useState<Player[]>([]);
   const [phase, setPhase] = useState<Phase>('SETUP');
   const [dayCount, setDayCount] = useState(1);
   const [log, setLog] = useState<string[]>([]);
-  const [botCount, setBotCount] = useState(4);
+  const [botCount, setBotCount] = useState(2);
   const [winnerInfo, setWinnerInfo] = useState<{winner: string, message: string} | null>(null);
   const [lynchResultInfo, setLynchResultInfo] = useState<{message: string} | null>(null);
   
@@ -86,20 +89,6 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
   const [chatTarget, setChatTarget] = useState<string>('');
   const [chatMessage, setChatMessage] = useState<string>('');
 
-  const myId = isHost ? 'player-host' : 'player-joiner';
-
-  // Helper to send game messages over WebRTC
-  const sendMessage = useCallback((payload: any) => {
-    if (channel.readyState === 'open') {
-      const msg: GameMessage = {
-        type: 'GAME_MESSAGE',
-        game: 'HIDDEN_ROLE',
-        payload
-      };
-      channel.send(JSON.stringify(msg));
-    }
-  }, [channel]);
-
   // Host: Compute state and broadcast to guest
   const broadcastSyncState = useCallback((
     currentPlayers: Player[],
@@ -108,36 +97,44 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
     currentLog: string[],
     currentWinner: any,
     currentLynch: any,
-    guestNightResult: string | null = null,
+    guestNightResults: Record<string, string> = {}, // targetId -> result message
     endTime: number | null = null,
     currentVotesPayload: Record<string, string> = {},
     currentWhispers: WhisperMessage[] = []
   ) => {
     if (!isHost) return;
 
-    // What guest sees:
-    const guestState: SyncState = {
-      phase: currentPhase,
-      dayCount: currentDay,
-      log: currentLog,
-      winnerInfo: currentWinner,
-      lynchResultInfo: currentLynch,
-      phaseEndTime: endTime,
-      currentVotes: currentVotesPayload,
-      whispers: currentWhispers.filter(w => w.fromId === 'player-joiner' || w.toId === 'player-joiner'),
-      myRole: currentPlayers.find(p => p.id === 'player-joiner')?.role || null,
-      myNightResult: guestNightResult,
-      players: currentPlayers.map(p => ({
-        id: p.id,
-        name: p.name,
-        isAlive: p.isAlive,
-        isBot: p.isBot,
-        // Only reveal roles of dead people (or their own)
-        role: (!p.isAlive || p.id === 'player-joiner') ? p.role : null
-      }))
-    };
+    // Send to each guest individually so they only see their own roles
+    guests.forEach(guest => {
+       const guestState: SyncState = {
+         phase: currentPhase,
+         dayCount: currentDay,
+         log: currentLog,
+         winnerInfo: currentWinner,
+         lynchResultInfo: currentLynch,
+         phaseEndTime: endTime,
+         currentVotes: currentVotesPayload,
+         whispers: currentWhispers.filter(w => w.fromId === guest.id || w.toId === guest.id),
+         myRole: currentPlayers.find(p => p.id === guest.id)?.role || null,
+         myNightResult: guestNightResults[guest.id] || null,
+         players: currentPlayers.map(p => ({
+           id: p.id,
+           name: p.name,
+           isAlive: p.isAlive,
+           isBot: p.isBot,
+           role: (!p.isAlive || p.id === guest.id) ? p.role : null
+         }))
+       };
 
-    sendMessage({ type: 'SYNC', state: guestState });
+       const channel = channels.get(guest.id);
+       if (channel && channel.readyState === 'open') {
+          channel.send(JSON.stringify({
+            type: 'GAME_MESSAGE',
+            game: 'HIDDEN_ROLE',
+            payload: { type: 'SYNC', state: guestState }
+          }));
+       }
+    });
 
     // Host local update for what Host sees
     setSyncState({
@@ -148,19 +145,35 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
       lynchResultInfo: currentLynch,
       phaseEndTime: endTime,
       currentVotes: currentVotesPayload,
-      whispers: currentWhispers.filter(w => w.fromId === 'player-host' || w.toId === 'player-host'),
-      myRole: currentPlayers.find(p => p.id === 'player-host')?.role || null,
+      whispers: currentWhispers.filter(w => w.fromId === myId || w.toId === myId),
+      myRole: currentPlayers.find(p => p.id === myId)?.role || null,
       myNightResult: null, // Host gets results directly in log or local state
       players: currentPlayers.map(p => ({
         id: p.id,
         name: p.name,
         isAlive: p.isAlive,
         isBot: p.isBot,
-        role: (!p.isAlive || p.id === 'player-host') ? p.role : null
+        // Only reveal roles of dead people (or their own, or if they are host and want to see all? No, host is player)
+        role: (!p.isAlive || p.id === myId) ? p.role : null
       }))
     });
 
-  }, [isHost, sendMessage]);
+  }, [isHost, guests, channels, myId]);
+
+  const sendMessage = useCallback((payload: any) => {
+    // Used by guests to send TO host
+    if (!isHost) {
+      const channel = channels.get('host');
+      if (channel && channel.readyState === 'open') {
+        const msg: GameMessage = {
+          type: 'GAME_MESSAGE',
+          game: 'HIDDEN_ROLE',
+          payload
+        };
+        channel.send(JSON.stringify(msg));
+      }
+    }
+  }, [channels, isHost]);
 
   // Handle incoming messages
   useEffect(() => {
@@ -197,20 +210,29 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
       }
     };
 
-    channel.addEventListener('message', handleMessage);
-    return () => channel.removeEventListener('message', handleMessage);
-  }, [channel, isHost, syncState?.phase, players, phase, dayCount, log, winnerInfo, lynchResultInfo, phaseEndTime, votes, whispers, broadcastSyncState]);
+    channels.forEach(c => c.addEventListener('message', handleMessage));
+    return () => {
+      channels.forEach(c => c.removeEventListener('message', handleMessage));
+    };
+  }, [channels, isHost, syncState?.phase, players, phase, dayCount, log, winnerInfo, lynchResultInfo, phaseEndTime, votes, whispers, broadcastSyncState]);
 
   // --- HOST LOGIC: Starting the game ---
   const startGame = () => {
     if (!isHost) return;
 
-    const totalPlayers = 2 + botCount;
+    let botCountActual = botCount;
+    // ensure we have at least 4 players minimum (if fewer, add bots)
+    const humans = guests.length + 1;
+    if (humans + botCountActual < 4) {
+      botCountActual = 4 - humans;
+    }
+    const totalPlayers = humans + botCountActual;
+    
     const newPlayers: Player[] = [
-      { id: 'player-host', name: 'Host (You)', isBot: false, role: 'VILLAGER', isAlive: true },
-      { id: 'player-joiner', name: 'Joiner', isBot: false, role: 'VILLAGER', isAlive: true },
+      { id: myId, name: myName, isBot: false, role: 'VILLAGER', isAlive: true },
+      ...guests.map(g => ({ id: g.id, name: g.name, isBot: false, role: 'VILLAGER' as Role, isAlive: true }))
     ];
-    for (let i = 0; i < botCount; i++) {
+    for (let i = 0; i < botCountActual; i++) {
       newPlayers.push({ id: `bot-${i+1}`, name: `Bot ${i+1}`, isBot: true, role: 'VILLAGER', isAlive: true });
     }
 
@@ -244,7 +266,7 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
     setPhaseEndTime(endTime);
     
     // Initial sync
-    broadcastSyncState(newPlayers, 'NIGHT', 1, ["The game has started. Everyone goes to sleep..."], null, null, null, endTime, {}, []);
+    broadcastSyncState(newPlayers, 'NIGHT', 1, ["The game has started. Everyone goes to sleep..."], null, null, {}, endTime, {}, []);
   };
 
   // --- HOST LOGIC: Check Timer ---
@@ -311,8 +333,7 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
 
     let killTarget: string | null = null;
     let protectTarget: string | null = null;
-    let guestInvestigationResult: string | null = null;
-    let hostInvestigationResult: string | null = null;
+    let investigationResults: Record<string, string> = {};
 
     // Aggregate actions
     Object.entries(finalActions).forEach(([actorId, targetId]) => {
@@ -324,8 +345,7 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
       if (actor.role === 'DETECTIVE' && targetId !== 'SKIP') {
         const target = players.find(p => p.id === targetId);
         const result = target?.role === 'MURDERER' ? `${target.name} is the MURDERER!` : `${target?.name} is NOT the murderer.`;
-        if (actorId === 'player-joiner') guestInvestigationResult = result;
-        if (actorId === 'player-host') hostInvestigationResult = result;
+        investigationResults[actorId] = result;
       }
     });
 
@@ -346,8 +366,8 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
       newLog.push("It was a quiet night... Nobody died.");
     }
 
-    if (hostInvestigationResult) {
-      newLog.push(`[Your Investigation]: ${hostInvestigationResult}`);
+    if (investigationResults[myId]) {
+      newLog.push(`[Your Investigation]: ${investigationResults[myId]}`);
     }
 
     setPlayers(newPlayers);
@@ -362,7 +382,7 @@ export function HiddenRole({ channel, isHost, onBackToLobby }: HiddenRoleProps) 
     
     const endTime = Date.now() + 60000;
     setPhaseEndTime(endTime);
-    broadcastSyncState(newPlayers, 'DAY_SUMMARY', dayCount, newLog, null, null, guestInvestigationResult, endTime, {}, whispers);
+    broadcastSyncState(newPlayers, 'DAY_SUMMARY', dayCount, newLog, null, null, investigationResults, endTime, {}, whispers);
   };
 
   // --- HOST LOGIC: Check Votes ---

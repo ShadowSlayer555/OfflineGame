@@ -2,8 +2,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useRef, useState } from 'react';
 import { QRScanner } from './components/QRScanner';
 import { decodeDescription, getCompleteLocalDescription, rtcConfig } from './lib/webrtc';
-import { Smartphone, WifiOff, ScanLine, QrCode, BookOpen, Plus, ChevronRight, User } from 'lucide-react';
+import { Smartphone, WifiOff, ScanLine, QrCode, BookOpen, Plus, ChevronRight, User, Volume2, VolumeX } from 'lucide-react';
 import { GameType, BaseMessage } from './types';
+import { setupAudio, setMuted, triggerHapticClick, playMusic } from './lib/audioManager';
 
 // Components
 import { Tutorial } from './components/Tutorial';
@@ -12,6 +13,7 @@ import { TapWar } from './components/games/TapWar';
 import { Pong } from './components/games/Pong';
 import { ChessGame } from './components/games/ChessGame';
 import { HiddenRole } from './components/games/HiddenRole';
+import { Tournament } from './components/Tournament';
 
 type AppState =
   | 'IDLE'
@@ -35,9 +37,42 @@ export default function App() {
   const [playerName, setPlayerName] = useState<string>('');
   const [activeGuestId, setActiveGuestId] = useState<string | null>(null);
   const [connectedGuests, setConnectedGuests] = useState<{id: string, name: string}[]>([]);
+  const [myGuestId, setMyGuestId] = useState<string | null>(null);
+  const [hostName, setHostName] = useState<string | null>(null);
+
+  // Audio State
+  const [audioEnabled, setAudioEnabled] = useState(true);
+
+  // Global onClick to bind haptic feedback to all buttons natively
+  useEffect(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('button')) {
+        triggerHapticClick();
+      }
+    };
+    document.addEventListener('click', handleGlobalClick);
+    return () => document.removeEventListener('click', handleGlobalClick);
+  }, []);
 
   // Game state
   const [selectedGame, setSelectedGame] = useState<GameType | null>(null);
+
+  // Sync music to game state
+  useEffect(() => {
+    if (audioEnabled) {
+       setupAudio().then(() => {
+          setMuted(false);
+          if (appState === 'PLAYING' && selectedGame) {
+             playMusic(selectedGame);
+          } else {
+             playMusic('LOBBY');
+          }
+       });
+    } else {
+       setMuted(true);
+    }
+  }, [audioEnabled, appState, selectedGame]);
 
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const channelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
@@ -63,6 +98,11 @@ export default function App() {
           
           if (msg.type === 'LOBBY_STATE' && !isHost) {
             setSelectedGame(msg.payload.game);
+            setAppState('LOBBY');
+          } else if (msg.type === 'SET_ID' && !isHost) {
+            setMyGuestId(msg.payload.id);
+            setConnectedGuests(msg.payload.guests);
+            setHostName(msg.payload.hostName);
             setAppState('LOBBY');
           } else if (msg.type === 'START_GAME') {
             setAppState('PLAYING');
@@ -229,7 +269,15 @@ export default function App() {
         )}
       </header>
 
-      <main className="w-full max-w-lg mx-auto flex-1 flex flex-col items-center justify-center p-6 sm:p-8">
+      <main className="w-full max-w-lg mx-auto flex-1 flex flex-col items-center justify-center p-6 sm:p-8 relative">
+        <button
+          onClick={() => setAudioEnabled(!audioEnabled)}
+          className="fixed bottom-6 right-6 z-50 p-4 bg-white/90 backdrop-blur border border-neutral-200/60 rounded-full shadow-lg shadow-neutral-900/10 text-neutral-600 hover:text-indigo-600 active:scale-95 transition-all outline-none"
+          title="Toggle Audio/Haptics"
+        >
+          {audioEnabled ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
+        </button>
+
         {errorTimer && (
           <div className="bg-red-100 text-red-800 p-3 rounded-lg text-sm mb-4 w-full shadow-sm">
             {errorTimer}
@@ -388,7 +436,9 @@ export default function App() {
               </button>
               <button
                 onClick={() => {
-                  broadcast({ type: 'GO_TO_LOBBY' });
+                  channelsRef.current.forEach((channel, guestId) => {
+                     channel.send(JSON.stringify({ type: 'SET_ID', payload: { id: guestId, guests: connectedGuests, hostName: playerName } }));
+                  });
                   setAppState('LOBBY');
                 }}
                 className="flex-[2] py-4 bg-indigo-600 text-white flex justify-center items-center gap-2 rounded-2xl shadow-lg shadow-indigo-600/20 font-bold text-lg hover:bg-indigo-700 active:scale-[0.98] transition-all"
@@ -436,17 +486,36 @@ export default function App() {
           />
         )}
 
-        {appState === 'PLAYING' && selectedGame === 'TAP_WAR' && channelsRef.current.size > 0 && (
-           <TapWar channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />
-        )}
-        {appState === 'PLAYING' && selectedGame === 'PONG' && channelsRef.current.size > 0 && (
-           <Pong channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />
-        )}
-        {appState === 'PLAYING' && selectedGame === 'CHESS' && channelsRef.current.size > 0 && (
-           <ChessGame channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />
-        )}
-        {appState === 'PLAYING' && selectedGame === 'HIDDEN_ROLE' && channelsRef.current.size > 0 && (
-           <HiddenRole channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />
+        {appState === 'PLAYING' && (
+          <div className="w-full h-full flex items-center justify-center">
+            {selectedGame === 'HIDDEN_ROLE' ? (
+              <HiddenRole 
+                channels={channelsRef.current} 
+                isHost={isHost} 
+                myId={isHost ? 'host' : (myGuestId || 'player-joiner')}
+                myName={playerName}
+                guests={connectedGuests}
+                onBackToLobby={handleBackToLobby} 
+              />
+            ) : connectedGuests.length > 1 ? (
+              <Tournament
+                gameType={selectedGame!}
+                myId={isHost ? 'host' : (myGuestId || 'player-joiner')}
+                myName={playerName}
+                players={[{id: 'host', name: isHost ? playerName : (hostName || 'Host')}, ...connectedGuests]}
+                isGlobalHost={isHost}
+                channelsRef={channelsRef}
+                onBackToLobby={handleBackToLobby}
+              />
+            ) : (
+              // Raw 2-player game (Host + 1 Guest)
+              <>
+                {selectedGame === 'TAP_WAR' && <TapWar channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />}
+                {selectedGame === 'PONG' && <Pong channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />}
+                {selectedGame === 'CHESS' && <ChessGame channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />}
+              </>
+            )}
+          </div>
         )}
         
       </main>

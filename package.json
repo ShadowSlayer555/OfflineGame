@@ -25,6 +25,7 @@
     "react": "^19.0.1",
     "react-chessboard": "^5.10.0",
     "react-dom": "^19.0.1",
+    "tone": "^15.1.22",
     "vite": "^6.2.3",
     "vite-plugin-pwa": "^1.3.0"
   },

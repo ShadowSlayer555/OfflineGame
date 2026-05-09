@@ -1,7 +1,7 @@
 export type GameType = 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE';
 
 export interface BaseMessage {
-  type: 'LOBBY_STATE' | 'START_GAME' | 'GAME_MESSAGE' | 'BACK_TO_LOBBY';
+  type: 'LOBBY_STATE' | 'START_GAME' | 'GAME_MESSAGE' | 'BACK_TO_LOBBY' | 'SET_ID' | 'GO_TO_LOBBY';
   payload?: any;
 }
 
