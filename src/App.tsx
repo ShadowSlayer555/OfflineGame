@@ -54,15 +54,16 @@ export default function App() {
     });
   };
 
-  // Handle global lobby messages when in LOBBY state
+  // Handle global lobby messages
   useEffect(() => {
-    if ((appState === 'LOBBY' || appState === 'PLAYING')) {
+    if ((appState === 'LOBBY' || appState === 'PLAYING' || appState === 'JOIN_ANSWER')) {
       const handleGlobalMessage = (event: MessageEvent) => {
         try {
           const msg: BaseMessage = JSON.parse(event.data);
           
           if (msg.type === 'LOBBY_STATE' && !isHost) {
             setSelectedGame(msg.payload.game);
+            setAppState('LOBBY');
           } else if (msg.type === 'START_GAME') {
             setAppState('PLAYING');
           } else if (msg.type === 'BACK_TO_LOBBY') {
@@ -134,7 +135,7 @@ export default function App() {
       
       await peer.setRemoteDescription(desc);
       setConnectedGuests(prev => [...prev, { id: activeGuestId, name: guestName }]);
-      setAppState('HOSTING_GUEST_CONNECTED');
+      // State transition will happen in channel.onopen
     } catch (e: any) {
       console.warn("Invalid answer code", e);
     }
