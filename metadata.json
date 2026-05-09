@@ -1,0 +1,8 @@
+{
+  "name": "Offline Multiplayer Game",
+  "description": "An offline-capable Progressive Web App game designed for local multiplayer without an internet connection.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
