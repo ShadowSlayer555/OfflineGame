@@ -160,7 +160,16 @@ export class CBGEngine {
       }
     }
 
-    // Process spells
+    // Process spells/animations
+    for (let i = this.state.projectiles.length - 1; i >= 0; i--) {
+       const p = this.state.projectiles[i];
+       if (p.type === 'spell_anim') {
+          p.radius += dt * 300; 
+          if (p.radius >= p.maxRadius) {
+             this.state.projectiles.splice(i, 1);
+          }
+       }
+    }
 
     // Filter dead
     this.state.entities = this.state.entities.filter(e => e.hp > 0);
@@ -192,6 +201,14 @@ export class CBGEngine {
                e.hp -= card.stats.damage!;
             }
          }
+         this.state.projectiles.push({
+            id: `anim_${Date.now()}_${Math.random()}`,
+            type: 'spell_anim',
+            x, y,
+            radius: 0,
+            maxRadius: card.stats.radius!,
+            color: card.color
+         });
       } else {
          const count = card.stats.count || 1;
          for (let i = 0; i < count; i++) {

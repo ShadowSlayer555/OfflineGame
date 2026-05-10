@@ -250,30 +250,68 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
        ctx.fillRect(e.x - 10, e.y - e.radius - 8, 20 * (e.hp / e.maxHp), 4);
     }
 
+    // Draw projectiles/spells
+    for (const p of gameState.projectiles || []) {
+       if (p.type === 'spell_anim') {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = Math.max(0, 1.0 - (p.radius / p.maxRadius));
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+       }
+    }
+
   }, [gameState, matchState]);
 
   const myTeam = isHost ? 0 : 1;
   const myElixir = gameState ? gameState.elixir[myTeam] : 0;
 
+  const playPlaceSound = () => {
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch (e) {} // ignore
+  };
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     // Only place card if selected
     if (!selectedCardId) return;
     
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    // We can use e.nativeEvent.offsetX / offsetY
+    const target = e.target as HTMLCanvasElement;
+    const x = (e.nativeEvent.offsetX / target.clientWidth) * MAP_W;
+    const y = (e.nativeEvent.offsetY / target.clientHeight) * MAP_H;
     
-    const x = (e.clientX - rect.left) * (400 / rect.width);
-    const y = (e.clientY - rect.left) * (600 / rect.height);
-    
-    // Must place on own half
-    if (isHost && y < 300) return;
-    if (!isHost && y > 300) return;
+    // Check placement restrictions
+    const card = CBG_CARDS.find(c => c.id === selectedCardId);
+    const isSpell = card?.type === 'spell';
+
+    // Must place on own half unless it's a spell
+    if (!isSpell) {
+      if (isHost && y < 300) return;
+      if (!isHost && y > 300) return;
+    }
 
     if (isHost) {
       engineRef.current?.playCard(0, selectedCardId, x, y);
     } else {
       broadcast({ type: 'PLAY_CARD', cardId: selectedCardId, x, y });
     }
+    
+    playPlaceSound();
 
     // cycle hand
     setHand(prev => {
@@ -288,6 +326,8 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
   };
 
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
+  const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
   
   // UI Actions
   const openChest = () => {
@@ -601,13 +641,67 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
      );
   }
 
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (draggingCardId) {
+      if (document.elementFromPoint(e.clientX, e.clientY) === canvasRef.current && canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        let rx = (e.clientX - rect.left) / rect.width;
+        let ry = (e.clientY - rect.top) / rect.height;
+        if (!isHost) {
+           rx = 1 - rx;
+           ry = 1 - ry;
+        }
+        const gameX = rx * MAP_W;
+        const gameY = ry * MAP_H;
+
+        const card = CBG_CARDS.find(c => c.id === draggingCardId);
+        const isSpell = card?.type === 'spell';
+        let valid = true;
+        if (!isSpell) {
+            if (isHost && gameY < 300) valid = false;
+            if (!isHost && gameY > 300) valid = false;
+        }
+        if (valid && myElixir >= card!.cost) {
+            if (isHost) {
+              engineRef.current?.playCard(0, draggingCardId, gameX, gameY);
+            } else {
+              broadcast({ type: 'PLAY_CARD', cardId: draggingCardId, x: gameX, y: gameY });
+            }
+            playPlaceSound();
+            setHand(prev => {
+              const newHand = [...prev];
+              const idx = newHand.indexOf(draggingCardId);
+              const nextCard = deckCycleRef.current.shift()!;
+              newHand[idx] = nextCard;
+              deckCycleRef.current.push(draggingCardId);
+              return newHand;
+            });
+            setSelectedCardId(null);
+        }
+      }
+      setDraggingCardId(null);
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (draggingCardId) {
+      setDragPos({ x: e.clientX, y: e.clientY });
+    }
+  };
+
   return (
-    <div className="w-full h-full bg-slate-900 flex flex-col relative overflow-hidden">
+    <div 
+      className="w-full h-full bg-slate-900 flex flex-col relative overflow-hidden"
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+    >
        {/* Game Canvas Container */}
        <div className="flex-1 max-w-md w-full mx-auto relative flex items-center justify-center">
          <canvas 
             ref={canvasRef} 
             width={MAP_W} height={MAP_H} 
+            style={{ transform: !isHost ? 'rotate(180deg)' : 'none' }}
             className="w-full h-full max-h-[80vh] object-contain border border-slate-800 bg-black cursor-crosshair touch-none"
             onClick={handleCanvasClick}
          />
@@ -629,21 +723,55 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
                    <button 
                       key={i}
                       disabled={!canAfford}
+                      onPointerDown={(e) => {
+                        if (!canAfford) return;
+                        setDraggingCardId(id);
+                        setSelectedCardId(id);
+                        setDragPos({ x: e.clientX, y: e.clientY });
+                        e.currentTarget.releasePointerCapture(e.pointerId); // let container handle move
+                      }}
                       onClick={() => setSelectedCardId(isSelected ? null : id)}
-                      className={`relative w-16 h-24 rounded-lg flex flex-col overflow-hidden transition-transform ${isSelected ? '-translate-y-4 shadow-lg shadow-indigo-500/50 ring-2 ring-indigo-400' : ''} ${!canAfford ? 'opacity-40 grayscale' : 'hover:-translate-y-1'}`}
+                      className={`relative w-16 h-24 rounded-lg flex flex-col overflow-hidden transition-transform ${isSelected ? '-translate-y-4 shadow-lg shadow-indigo-500/50 ring-2 ring-indigo-400' : ''} ${!canAfford ? 'opacity-40 grayscale' : 'hover:-translate-y-1'} ${draggingCardId === id ? 'opacity-50' : ''}`}
+                      style={{ touchAction: 'none' }}
                    >
-                      <div className="h-[55%] w-full bg-slate-700 flex items-center justify-center relative shadow-inner">
+                      <div className="h-[55%] w-full bg-slate-700 flex items-center justify-center relative shadow-inner pointer-events-none">
                          <UnitPreview card={c} />
                       </div>
-                      <div className="flex-1 w-full bg-slate-800 p-1 flex items-center justify-center">
+                      <div className="flex-1 w-full bg-slate-800 p-1 flex items-center justify-center pointer-events-none">
                          <span className="text-[9px] font-bold text-center leading-tight drop-shadow text-white">{c.name}</span>
                       </div>
-                      <div className="absolute top-1 left-1 bg-fuchsia-500 text-white rounded-full w-5 h-5 shadow-md flex items-center justify-center text-[10px] font-black">{c.cost}</div>
+                      <div className="absolute top-1 left-1 bg-fuchsia-500 text-white rounded-full w-5 h-5 shadow-md flex items-center justify-center text-[10px] font-black pointer-events-none">{c.cost}</div>
                    </button>
                 );
              })}
           </div>
        </div>
+
+       {/* Dragged Card Overlay */}
+       {draggingCardId && (
+         <div 
+           className="fixed pointer-events-none z-[100] w-16 h-24 rounded-lg flex flex-col overflow-hidden shadow-2xl ring-2 ring-indigo-400 opacity-80 scale-105"
+           style={{
+             left: dragPos.x - 32,
+             top: dragPos.y - 48
+           }}
+         >
+            {(() => {
+               const c = CBG_CARDS.find(card => card.id === draggingCardId)!;
+               return (
+                 <>
+                    <div className="h-[55%] w-full bg-slate-700 flex items-center justify-center relative shadow-inner">
+                       <UnitPreview card={c} />
+                    </div>
+                    <div className="flex-1 w-full bg-slate-800 p-1 flex items-center justify-center">
+                       <span className="text-[9px] font-bold text-center leading-tight drop-shadow text-white">{c.name}</span>
+                    </div>
+                    <div className="absolute top-1 left-1 bg-fuchsia-500 text-white rounded-full w-5 h-5 shadow-md flex items-center justify-center text-[10px] font-black">{c.cost}</div>
+                 </>
+               );
+            })()}
+         </div>
+       )}
     </div>
   );
 }

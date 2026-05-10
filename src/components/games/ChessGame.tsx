@@ -13,6 +13,8 @@ export function ChessGame({ channel, isHost, onBackToLobby }: ChessGameProps) {
   const [game, setGame] = useState(new Chess());
   const [fen, setFen] = useState(game.fen());
   const [gameOverStr, setGameOverStr] = useState<string | null>(null);
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [optionSquares, setOptionSquares] = useState({});
 
   const isNetworked = !!channel;
   const myColor = isHost ? 'white' : 'black';
@@ -68,19 +70,12 @@ export function ChessGame({ channel, isHost, onBackToLobby }: ChessGameProps) {
     else if (current_game.isStalemate()) setGameOverStr("Stalemate!");
   };
 
-  const onDrop = (sourceSquare: string, targetSquare: string) => {
-    // Prevent moving if not our turn or game is over
-    if (!isMyTurn || gameOverStr) return false;
-
+  const makeMove = (move: { from: string; to: string; promotion?: string }) => {
     try {
       const gameCopy = new Chess(fen);
-      const move = gameCopy.move({
-        from: sourceSquare,
-        to: targetSquare,
-        promotion: 'q', // always promote to queen for simplicity
-      });
+      const result = gameCopy.move(move);
 
-      if (move === null) return false;
+      if (result === null) return false;
 
       setGame(gameCopy);
       setFen(gameCopy.fen());
@@ -92,6 +87,58 @@ export function ChessGame({ channel, isHost, onBackToLobby }: ChessGameProps) {
     } catch (e) {
       return false; // Illegal move
     }
+  };
+
+  const onDrop = (sourceSquare: string, targetSquare: string) => {
+    // Prevent moving if not our turn or game is over
+    if (!isMyTurn || gameOverStr) return false;
+
+    return makeMove({
+      from: sourceSquare,
+      to: targetSquare,
+      promotion: 'q', // always promote to queen for simplicity
+    });
+  };
+
+  const onSquareClick = (square: string) => {
+    if (!isMyTurn || gameOverStr) return;
+
+    if (selectedSquare) {
+      // Trying to move
+      const move = makeMove({
+        from: selectedSquare,
+        to: square,
+        promotion: 'q'
+      });
+      if (move) {
+        setSelectedSquare(null);
+        setOptionSquares({});
+        return; // Valid move made
+      }
+    }
+    
+    // Select piece
+    const gameCopy = new Chess(fen);
+    const moves = gameCopy.moves({ square: square, verbose: true });
+    
+    if (moves.length === 0) {
+      setSelectedSquare(null);
+      setOptionSquares({});
+      return;
+    }
+
+    setSelectedSquare(square);
+    const newSquares: Record<string, any> = {};
+    moves.forEach((m: any) => {
+      newSquares[m.to] = {
+        background: "radial-gradient(circle, rgba(0,0,0,.1) 25%, transparent 25%)",
+        borderRadius: "50%"
+      };
+    });
+    newSquares[square] = {
+      background: "rgba(255, 255, 0, 0.4)"
+    };
+    setOptionSquares(newSquares);
   };
 
   const startNewGame = () => {
@@ -118,14 +165,16 @@ export function ChessGame({ channel, isHost, onBackToLobby }: ChessGameProps) {
         </span>
       </div>
 
-      <div className="w-full max-w-[320px] aspect-square rounded overflow-hidden shadow-2xl mb-8">
+      <div className="w-full max-w-[320px] aspect-square rounded overflow-hidden shadow-2xl mb-8 touch-none">
         <Chessboard 
           {...({
             position: fen,
             onPieceDrop: onDrop,
+            onSquareClick: onSquareClick,
             boardOrientation: boardOrientation,
             customDarkSquareStyle: { backgroundColor: '#779556' },
             customLightSquareStyle: { backgroundColor: '#ebecd0' },
+            customSquareStyles: optionSquares,
             animationDuration: isNetworked ? 300 : 0 // remove animation for hotseat so rotation is clean
           } as any)}
         />
