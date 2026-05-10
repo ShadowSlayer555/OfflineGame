@@ -1,4 +1,4 @@
-export type GameType = 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE';
+export type GameType = 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE' | 'CARD_BATTLE';
 
 export interface BaseMessage {
   type: 'LOBBY_STATE' | 'START_GAME' | 'GAME_MESSAGE' | 'BACK_TO_LOBBY' | 'SET_ID' | 'GO_TO_LOBBY';
@@ -52,6 +52,17 @@ export const GAMES: Record<GameType, { id: GameType; name: string; description: 
       'Sheriff: Protect one person each night, preventing them from being killed.',
       'Villager/Jester: Survive, deduce, and vote during the day. The Jester WANTS to be voted out to win!',
       'Bots will fill out the rest of the town. During the day, everyone votes on who to eliminate.'
+    ]
+  },
+  CARD_BATTLE: {
+    id: 'CARD_BATTLE',
+    name: 'Card Battle Ground',
+    description: 'Deploy cards to destroy enemy towers like Clash Royale.',
+    tutorial: [
+      'You get an initial deck of 12 cards, with 4 playable in your hand.',
+      'Tap a card to select it, then tap anywhere on your side of the map to deploy it.',
+      'Deploy units costing Elixir (which regenerates over time).',
+      'Destroy the enemy King Tower to win! Win matches to get Card Secrets to unlock more cards.'
     ]
   }
 };

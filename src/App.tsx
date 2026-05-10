@@ -15,6 +15,8 @@ import { ChessGame } from './components/games/ChessGame';
 import { HiddenRole } from './components/games/HiddenRole';
 import { Tournament } from './components/Tournament';
 
+import { CardBattleGround } from './components/games/cbg/CardBattleGround';
+
 type AppState =
   | 'IDLE'
   | 'TUTORIAL'
@@ -513,6 +515,7 @@ export default function App() {
                 {selectedGame === 'TAP_WAR' && <TapWar channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />}
                 {selectedGame === 'PONG' && <Pong channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />}
                 {selectedGame === 'CHESS' && <ChessGame channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />}
+                {selectedGame === 'CARD_BATTLE' && <CardBattleGround channel={channelsRef.current.values().next().value} isHost={isHost} onBackToLobby={handleBackToLobby} />}
               </>
             )}
           </div>
