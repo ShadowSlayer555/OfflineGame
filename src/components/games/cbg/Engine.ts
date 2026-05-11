@@ -19,17 +19,36 @@ export interface Entity {
   attackCooldown: number;
   radius: number;
   cardId?: string; // which card spawned it
+  towerType?: 'king' | 'archer';
+}
+
+export interface Projectile {
+  id: string;
+  type: 'arrow' | 'cannonball' | 'spell_anim' | 'champion_magic';
+  team: number;
+  x: number;
+  y: number;
+  tx: number;
+  ty: number;
+  speed: number;
+  damage: number;
+  targetId?: string;
+  radius?: number;
+  maxRadius?: number;
+  color: string;
+  trail?: { x: number, y: number }[];
+  visualStyle?: 'lightning' | 'fireball' | 'portal';
 }
 
 export interface GameState {
   entities: Entity[];
-  projectiles: any[];
+  projectiles: Projectile[];
   elixir: [number, number]; // [host, guest]
   gameOver: boolean;
   winner: number | null;
 }
 
-const TOWER_HP = { king: 2000, archer: 1000 };
+const TOWER_HP = { king: 400, archer: 200 };
 
 export class CBGEngine {
   state: GameState;
@@ -56,16 +75,18 @@ export class CBGEngine {
     this.spawnTower(1, 300, 150, 'archer', TOWER_HP.archer);
   }
 
-  spawnTower(team: number, x: number, y: number, typeStr: string, hp: number) {
+  spawnTower(team: number, x: number, y: number, typeStr: 'king' | 'archer', hp: number) {
     this.state.entities.push({
-      id: `tower_${team}_${typeStr}_${x}`,
+      id: `tower_${team}_${typeStr}_${Date.now()}_${Math.random()}`,
       type: 'tower',
       team, x, y, hp, maxHp: hp,
-      damage: typeStr === 'king' ? 40 : 30,
-      range: 120, speed: 0,
+      damage: typeStr === 'king' ? 60 : 15, // King high dmg, low dps; Archer low dmg
+      range: typeStr === 'king' ? 140 : 120, 
+      speed: 0,
       color: team === 0 ? '#3b82f6' : '#ef4444',
       attackCooldown: 0,
       radius: typeStr === 'king' ? 25 : 20,
+      towerType: typeStr
     });
   }
 
@@ -109,12 +130,59 @@ export class CBGEngine {
         if (d <= e.range + e.radius + target.radius) {
           // Attack
           if (e.attackCooldown <= 0) {
-            if (e.damage < 0) { // healer
-              target.hp = Math.min(target.maxHp, target.hp - e.damage);
+            let cooldown = 1.0;
+            if (e.type === 'tower') {
+                if (e.towerType === 'king') {
+                   cooldown = 2.5; // low dps
+                   this.state.projectiles.push({
+                      id: `proj_${Date.now()}_${Math.random()}`,
+                      type: 'cannonball', team: e.team,
+                      x: e.x, y: e.y, tx: target.x, ty: target.y,
+                      speed: 200, damage: e.damage,
+                      targetId: target.id, color: '#0f172a' // black cannonball
+                   });
+                } else {
+                   cooldown = 1.0; // archer 
+                   this.state.projectiles.push({
+                      id: `proj_${Date.now()}_${Math.random()}`,
+                      type: 'arrow', team: e.team,
+                      x: e.x, y: e.y, tx: target.x, ty: target.y,
+                      speed: 300, damage: e.damage,
+                      targetId: target.id, color: '#f8fafc' // white arrow
+                   });
+                }
             } else {
-              target.hp -= e.damage;
+                if (e.damage < 0) { // healer
+                  target.hp = Math.min(target.maxHp, target.hp - e.damage);
+                } else if (e.cardId?.startsWith('ch')) {
+                   // Champion attacks
+                   let visualStyle: 'lightning' | 'fireball' | 'portal' = 'lightning';
+                   if (e.cardId === 'ch2') visualStyle = 'fireball';
+                   else if (e.cardId === 'ch3') visualStyle = 'portal';
+
+                   this.state.projectiles.push({
+                      id: `proj_${Date.now()}_${Math.random()}`,
+                      type: 'champion_magic', team: e.team,
+                      x: e.x, y: e.y, tx: target.x, ty: target.y,
+                      speed: visualStyle === 'portal' ? 400 : 250, damage: e.damage,
+                      targetId: target.id, color: e.color,
+                      trail: [], visualStyle
+                   });
+                } else if (e.range > 30) {
+                   // Regular ranged attacks
+                   this.state.projectiles.push({
+                      id: `proj_${Date.now()}_${Math.random()}`,
+                      type: 'arrow', team: e.team,
+                      x: e.x, y: e.y, tx: target.x, ty: target.y,
+                      speed: 300, damage: e.damage,
+                      targetId: target.id, color: '#f8fafc' // white arrow
+                   });
+                } else {
+                   // Melee attack directly applies damage
+                  target.hp -= e.damage;
+                }
             }
-            e.attackCooldown = 1.0; // 1 attack per sec roughly
+            e.attackCooldown = cooldown;
           }
         } else if (e.type === 'troop') {
           // Move towards target
@@ -160,12 +228,33 @@ export class CBGEngine {
       }
     }
 
-    // Process spells/animations
+    // Process spells/animations/projectiles
     for (let i = this.state.projectiles.length - 1; i >= 0; i--) {
        const p = this.state.projectiles[i];
        if (p.type === 'spell_anim') {
-          p.radius += dt * 300; 
-          if (p.radius >= p.maxRadius) {
+          if (p.radius !== undefined && p.maxRadius !== undefined) {
+             p.radius += dt * 300; 
+             if (p.radius >= p.maxRadius) {
+                this.state.projectiles.splice(i, 1);
+             }
+          }
+       } else {
+          // move projectile towards target
+          const angle = Math.atan2(p.ty - p.y, p.tx - p.x);
+          p.x += Math.cos(angle) * p.speed * dt;
+          p.y += Math.sin(angle) * p.speed * dt;
+          
+          if (p.trail) {
+             p.trail.push({ x: p.x, y: p.y });
+             if (p.trail.length > 5) p.trail.shift();
+          }
+
+          // hit detection
+          if (this.dist({x: p.x, y: p.y}, {x: p.tx, y: p.ty}) < 15) {
+             const hitE = this.state.entities.find(e => e.id === p.targetId && e.hp > 0);
+             if (hitE) {
+                hitE.hp -= p.damage;
+             }
              this.state.projectiles.splice(i, 1);
           }
        }

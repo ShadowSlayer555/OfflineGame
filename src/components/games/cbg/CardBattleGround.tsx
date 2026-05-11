@@ -1,12 +1,32 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { CardDef, CBG_CARDS } from './cards';
 import { CBGEngine, GameState, Entity } from './Engine';
-import { Play, Package, Book, Unlock, ArrowLeft, Download, Upload, Save, Info, X } from 'lucide-react';
+import { Play, Package, Book, Unlock, ArrowLeft, Download, Upload, Save, Info, X, MoreVertical, Lock } from 'lucide-react';
 
 const MAP_W = 400;
 const MAP_H = 600;
 
 const UnitPreview = ({ card }: { card: CardDef }) => {
+   if (card.isChampion) {
+       return (
+          <svg viewBox="-30 -30 60 60" className="w-14 h-14 drop-shadow-lg">
+             <defs>
+                 <linearGradient id={`${card.id}-grad`} x1="0" y1="0" x2="1" y2="1">
+                     <stop offset="0%" stopColor="#fbbf24" />
+                     <stop offset="100%" stopColor={card.color} />
+                 </linearGradient>
+             </defs>
+             <polygon points="0,-25 20,-10 20,15 0,25 -20,15 -20,-10" fill={`url(#${card.id}-grad)`} stroke="#fcd34d" strokeWidth="2" />
+             <circle cx="0" cy="0" r="12" fill={card.color} />
+             {card.type === 'spell' ? (
+                <text x="0" y="4" fontSize="12" textAnchor="middle" fill="white" fontWeight="bold">✨</text>
+             ) : (
+                <rect x="-8" y="-4" width="16" height="8" fill="rgba(255,255,255,0.4)" rx="2" />
+             )}
+          </svg>
+       );
+   }
+
    if (card.type === 'spell') {
       return (
          <svg viewBox="-20 -20 40 40" className="w-10 h-10 drop-shadow-md">
@@ -56,9 +76,17 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
   
   // UI State
   const [tab, setTab] = useState<'BATTLE' | 'CARDS'>('BATTLE');
+  const [cardFilter, setCardFilter] = useState<'REGULAR' | 'CHAMPION'>('REGULAR');
   const [matchState, setMatchState] = useState<'MENU' | 'PLAYING' | 'ENDED'>('MENU');
   const [infoModalCardId, setInfoModalCardId] = useState<string | null>(null);
   
+  // Promo Code State
+  const [promoUnlockedIds, setPromoUnlockedIds] = useState<string[]>([]);
+  const [hasPromoChest, setHasPromoChest] = useState(false);
+  const [showPromoModal, setShowPromoModal] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [showMenu, setShowMenu] = useState(false);
+
   // In-game state
   const engineRef = useRef<CBGEngine | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -86,7 +114,7 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
   // Save to local storage
   useEffect(() => {
     if (unlockedIds.length > 0) localStorage.setItem('cbg_unlocked', JSON.stringify(unlockedIds));
-    if (deckIds.length > 0) localStorage.setItem('cbg_deck', JSON.stringify(deckIds));
+    if (deckIds.length > 0) localStorage.setItem('cbg_deck', JSON.stringify(deckIds.filter(id => unlockedIds.includes(id))));
     localStorage.setItem('cbg_chests', chests.toString());
   }, [unlockedIds, deckIds, chests]);
 
@@ -117,6 +145,10 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
   };
 
   const startMatchHost = () => {
+    if (deckIds.length < 12) {
+       alert("Your deck must have exactly 12 cards to battle! Please add more cards from the CARDS tab.");
+       return;
+    }
     broadcast({ type: 'START_MATCH' });
     startMatchLocal();
   };
@@ -192,12 +224,45 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
        ctx.fillStyle = e.color;
        
        if (e.type === 'tower') {
-          // simple square base, round top
+          // simple square base
           ctx.fillRect(e.x - e.radius, e.y - e.radius, e.radius*2, e.radius*2);
-          ctx.fillStyle = e.team === 0 ? '#1d4ed8' : '#7f1d1d';
-          ctx.beginPath();
-          ctx.arc(e.x, e.y, e.radius * 0.5, 0, Math.PI*2);
-          ctx.fill();
+          
+          if (e.towerType === 'king') {
+             // geometric king
+             ctx.fillStyle = '#fbbf24'; // gold crown
+             ctx.beginPath();
+             ctx.moveTo(e.x - 10, e.y - 5);
+             ctx.lineTo(e.x - 10, e.y - 15);
+             ctx.lineTo(e.x - 5, e.y - 10);
+             ctx.lineTo(e.x, e.y - 18);
+             ctx.lineTo(e.x + 5, e.y - 10);
+             ctx.lineTo(e.x + 10, e.y - 15);
+             ctx.lineTo(e.x + 10, e.y - 5);
+             ctx.fill();
+             
+             ctx.fillStyle = e.team === 0 ? '#1d4ed8' : '#7f1d1d';
+             ctx.fillRect(e.x - 10, e.y - 5, 20, 15); // body
+             
+             // geometric cannon
+             ctx.fillStyle = '#1e293b'; 
+             ctx.fillRect(e.x - 4, e.y + (e.team === 0 ? -25 : 10), 8, 15); 
+          } else {
+             // geometric archer
+             ctx.fillStyle = '#fca5a5'; // face
+             ctx.beginPath();
+             ctx.arc(e.x, e.y - 5, 6, 0, Math.PI*2);
+             ctx.fill();
+             
+             ctx.fillStyle = e.team === 0 ? '#1d4ed8' : '#7f1d1d';
+             ctx.fillRect(e.x - 6, e.y + 1, 12, 10); // body
+             
+             // bow
+             ctx.beginPath();
+             ctx.arc(e.x, e.y + 5, 10, e.team === 0 ? Math.PI : 0, e.team === 0 ? Math.PI*2 : Math.PI);
+             ctx.lineWidth = 2;
+             ctx.strokeStyle = '#854d0e';
+             ctx.stroke();
+          }
        } else {
           // troop with more detailed geometric rendering
           ctx.save();
@@ -206,10 +271,35 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
           const t = performance.now() / 200;
           const wobble = Math.sin(t * e.speed * 0.1 + (e.x + e.y)) * 4;
           
+          const isChampion = e.cardId?.startsWith('ch');
+          if (isChampion) {
+             // Champions are larger and more complex
+             ctx.scale(1.5, 1.5);
+             ctx.shadowBlur = 10;
+             ctx.shadowColor = e.color;
+          }
+          
           // Draw Body
           ctx.beginPath();
           ctx.arc(0, wobble, e.radius, 0, Math.PI*2);
           ctx.fill();
+          
+          if (isChampion) {
+             ctx.shadowBlur = 0;
+             // Draw extra geometric details for champions
+             ctx.fillStyle = '#fbbf24'; // champion gold trim
+             ctx.beginPath();
+             ctx.moveTo(0, wobble - e.radius - 5);
+             ctx.lineTo(5, wobble - e.radius);
+             ctx.lineTo(-5, wobble - e.radius);
+             ctx.fill();
+             
+             ctx.strokeStyle = '#fbbf24';
+             ctx.lineWidth = 1;
+             ctx.beginPath();
+             ctx.arc(0, wobble, e.radius + 2, 0, Math.PI * 2);
+             ctx.stroke();
+          }
           
           // Add distinguishing geometric shapes based on card attributes
           ctx.fillStyle = '#cbd5e1';
@@ -254,11 +344,52 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
     for (const p of gameState.projectiles || []) {
        if (p.type === 'spell_anim') {
           ctx.beginPath();
-          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.arc(p.x, p.y, p.radius || 0, 0, Math.PI * 2);
           ctx.fillStyle = p.color;
-          ctx.globalAlpha = Math.max(0, 1.0 - (p.radius / p.maxRadius));
+          ctx.globalAlpha = Math.max(0, 1.0 - ((p.radius || 0) / (p.maxRadius || 1)));
           ctx.fill();
           ctx.globalAlpha = 1.0;
+       } else {
+          if (p.trail && p.trail.length > 1) {
+             ctx.beginPath();
+             ctx.moveTo(p.trail[0].x, p.trail[0].y);
+             for (let i = 1; i < p.trail.length; i++) {
+                ctx.lineTo(p.trail[i].x, p.trail[i].y);
+             }
+             ctx.strokeStyle = p.color;
+             ctx.lineWidth = p.type === 'champion_magic' ? 4 : 2;
+             if (p.visualStyle === 'lightning') {
+                ctx.setLineDash([5, 5]); // dash for lightning-ish
+             }
+             ctx.stroke();
+             ctx.setLineDash([]);
+          }
+
+          ctx.fillStyle = p.color;
+          if (p.type === 'cannonball') {
+             ctx.beginPath();
+             ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+             ctx.fill();
+          } else if (p.type === 'arrow') {
+             ctx.save();
+             ctx.translate(p.x, p.y);
+             ctx.rotate(Math.atan2(p.ty - p.y, p.tx - p.x));
+             ctx.fillRect(-4, -1, 8, 2);
+             ctx.fillStyle = '#94a3b8'; // arrow head
+             ctx.beginPath();
+             ctx.moveTo(4, -2);
+             ctx.lineTo(8, 0);
+             ctx.lineTo(4, 2);
+             ctx.fill();
+             ctx.restore();
+          } else if (p.type === 'champion_magic') {
+             ctx.beginPath();
+             ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+             ctx.shadowBlur = 10;
+             ctx.shadowColor = p.color;
+             ctx.fill();
+             ctx.shadowBlur = 0;
+          }
        }
     }
 
@@ -359,7 +490,7 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
   const handleSaveProgress = async () => {
     const data = JSON.stringify({
         unlockedIds,
-        deckIds,
+        deckIds: deckIds.filter(id => unlockedIds.includes(id)),
         chests
     });
     
@@ -458,8 +589,8 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
   const toggleDeckCard = (cId: string) => {
      if (deckIds.includes(cId)) {
         if (deckIds.length <= 12) {
-           alert("Deck must have 12 cards!");
-           return;
+           // We can remove it, but deck won't be full. That's fine, let them remove and build a new deck.
+           // Actually, the previous logic said "Deck must have 12 cards" when removing. We can let them remove it but prevent battle if < 12.
         }
         setDeckIds(prev => prev.filter(id => id !== cId));
         setHasUnsavedProgress(true);
@@ -467,6 +598,14 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
         if (deckIds.length >= 12) {
            alert("Deck is full (max 12). Remove a card first.");
            return;
+        }
+        const cardObj = CBG_CARDS.find(c => c.id === cId);
+        if (cardObj?.isChampion) {
+           const existingChampion = deckIds.find(id => CBG_CARDS.find(c => c.id === id)?.isChampion);
+           if (existingChampion) {
+              alert("You can only have one Champion in your deck. Remove your current Champion first.");
+              return;
+           }
         }
         setDeckIds(prev => [...prev, cId]);
         setHasUnsavedProgress(true);
@@ -484,15 +623,28 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
                  <div className="bg-slate-800 border-2 border-slate-700 rounded-3xl w-full max-w-sm p-6 flex flex-col gap-6 shadow-2xl" onClick={e => e.stopPropagation()}>
                     <div className="flex justify-between items-start">
                        <div>
-                          <h2 className="text-2xl font-black">{infoC.name}</h2>
+                          <h2 className="text-2xl font-black flex items-center gap-2">
+                             {infoC.name} 
+                             {infoC.isChampion && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/50 px-2 py-1 rounded-full uppercase tracking-wider">Champion</span>}
+                          </h2>
                           <p className="text-slate-400 capitalize">{infoC.type}</p>
                        </div>
                        <button onClick={() => setInfoModalCardId(null)} className="p-2 bg-slate-700 rounded-full text-slate-300 hover:text-white"><X className="w-5 h-5"/></button>
                     </div>
 
                     <div className="w-full aspect-video bg-slate-700 rounded-2xl flex items-center justify-center shadow-inner relative overflow-hidden">
-                       <UnitPreview card={infoC} />
+                       <div className={`${infoC.isChampion ? 'scale-150' : ''}`}><UnitPreview card={infoC} /></div>
                        <div className="absolute bottom-2 left-2 bg-fuchsia-500 text-white rounded-full px-3 py-1 text-sm font-black shadow-md flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-white animate-pulse" /> {infoC.cost} Elixir</div>
+                    </div>
+                    
+                    <div className="text-sm text-slate-300">
+                       <p>{infoC.description}</p>
+                       {infoC.abilityDesc && (
+                          <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                             <div className="text-xs text-amber-400 font-bold uppercase mb-1">Champion Ability</div>
+                             <p className="text-amber-200/90 leading-tight">{infoC.abilityDesc}</p>
+                          </div>
+                       )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 text-sm">
@@ -502,21 +654,75 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
                        {infoC.stats.range !== undefined && <div className="bg-slate-900/50 p-3 rounded-xl"><span className="text-slate-400 block pb-1 text-xs uppercase font-bold">Range</span><span className="font-bold">{infoC.stats.range}</span></div>}
                     </div>
 
-                    <button 
-                       onClick={() => toggleDeckCard(infoC.id)}
-                       className={`w-full py-4 rounded-full font-black text-lg transition-transform active:scale-95 ${inDeck ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30 border-2 border-red-500/50' : 'bg-indigo-500 text-white hover:bg-indigo-400'}`}
-                    >
-                       {inDeck ? 'Remove from Deck' : 'Add to Deck'}
-                    </button>
+                    {isUnlocked ? (
+                       <button 
+                          onClick={() => toggleDeckCard(infoC.id)}
+                          className={`w-full py-4 rounded-full font-black text-lg transition-transform active:scale-95 ${inDeck ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30 border-2 border-red-500/50' : 'bg-indigo-500 text-white hover:bg-indigo-400'}`}
+                       >
+                          {inDeck ? 'Remove from Deck' : 'Add to Deck'}
+                       </button>
+                    ) : (
+                       <div className="w-full py-4 rounded-full font-black text-lg bg-slate-700 text-slate-500 text-center border-2 border-slate-600 flex items-center justify-center gap-2">
+                          <Lock className="w-5 h-5"/> Locked
+                       </div>
+                    )}
                  </div>
               </div>
            );
         })()}
 
-        <header className="px-4 py-3 bg-slate-800 flex justify-between items-center shadow-md">
-          <h1 className="font-bold text-xl flex items-center gap-2"><div className="w-4 h-4 bg-indigo-500 rounded-sm" /> Card Battle</h1>
-          <button onClick={onBackToLobby} className="text-slate-400 hover:text-white"><ArrowLeft className="w-5 h-5"/></button>
+        <header className="px-4 py-3 bg-slate-800 flex justify-between items-center shadow-md relative">
+          <div className="flex items-center gap-3">
+             <button onClick={onBackToLobby} className="text-slate-400 hover:text-white"><ArrowLeft className="w-5 h-5"/></button>
+             <h1 className="font-bold text-xl flex items-center gap-2"><div className="w-4 h-4 bg-indigo-500 rounded-sm" /> Card Battle</h1>
+          </div>
+          <div className="relative">
+             <button onClick={() => setShowMenu(!showMenu)} className="text-slate-400 hover:text-white"><MoreVertical className="w-5 h-5"/></button>
+             {showMenu && (
+                 <div className="absolute right-0 top-full mt-2 w-40 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50">
+                     <button 
+                        onClick={() => { setShowMenu(false); setShowPromoModal(true); }} 
+                        className="w-full text-left px-4 py-3 text-sm font-bold text-slate-300 hover:bg-slate-700 hover:text-white"
+                     >
+                         Promo Code
+                     </button>
+                 </div>
+             )}
+          </div>
         </header>
+
+        {showPromoModal && (
+           <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 flex-col" onClick={() => setShowPromoModal(false)}>
+              <div className="bg-slate-800 border-2 border-slate-700 rounded-3xl w-full max-w-sm p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                  <h2 className="text-2xl font-black mb-4">Enter Promo Code</h2>
+                  <input 
+                     type="text" 
+                     value={promoCode} 
+                     onChange={e => setPromoCode(e.target.value)} 
+                     placeholder="Enter code..."
+                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white mb-4 outline-none focus:border-indigo-500"
+                  />
+                  <div className="flex gap-2">
+                     <button onClick={() => setShowPromoModal(false)} className="flex-1 py-3 text-slate-400 hover:text-white font-bold bg-slate-700 rounded-xl">Cancel</button>
+                     <button 
+                        onClick={() => {
+                           if (promoCode === '2069845') {
+                               setHasPromoChest(true);
+                               setShowPromoModal(false);
+                               setPromoCode('');
+                               alert('Promo applied! A special chest has been given to you.');
+                           } else {
+                               alert('Invalid code.');
+                           }
+                        }} 
+                        className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl"
+                     >
+                        Redeem
+                     </button>
+                  </div>
+              </div>
+           </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-4 hide-scrollbar pb-24">
            {tab === 'BATTLE' && (
@@ -551,6 +757,17 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
                           <span className="font-bold">{chests} Chests</span>
                           {chests > 0 && <span className="text-xs">Tap to open</span>}
                        </button>
+                       {hasPromoChest && (
+                          <button onClick={() => {
+                             setHasPromoChest(false);
+                             setPromoUnlockedIds(CBG_CARDS.map(c => c.id));
+                             alert('You opened the Promo Chest! All cards are temporarily unlocked for this session.');
+                          }} className="flex-1 py-6 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all bg-fuchsia-500/20 border-fuchsia-500 text-fuchsia-400 hover:bg-fuchsia-500/30">
+                             <Package className="w-10 h-10 animate-bounce drop-shadow-[0_0_10px_rgba(217,70,239,0.8)]" />
+                             <span className="font-bold">Promo Chest</span>
+                             <span className="text-xs">Tap to open</span>
+                          </button>
+                       )}
                     </div>
                  </div>
               </div>
@@ -583,7 +800,7 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
                        {deckIds.map(id => {
                           const c = CBG_CARDS.find(card => card.id === id)!;
                           return (
-                             <div key={id} onClick={() => setInfoModalCardId(id)} className="aspect-[3/4] rounded-xl border-2 border-indigo-500 relative flex flex-col cursor-pointer overflow-hidden bg-slate-800 hover:border-indigo-400 transition-colors group">
+                             <div key={id} onClick={() => setInfoModalCardId(id)} className={`aspect-[3/4] rounded-xl border-2 ${c.isChampion ? 'border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.5)]' : 'border-indigo-500'} relative flex flex-col cursor-pointer overflow-hidden bg-slate-800 hover:border-indigo-400 transition-colors group`}>
                                 <div className="h-[55%] w-full bg-slate-700 flex items-center justify-center relative shadow-inner">
                                    <UnitPreview card={c} />
                                 </div>
@@ -599,15 +816,23 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
                  </div>
 
                  <div>
-                    <h3 className="font-bold text-lg mb-2">Collection</h3>
-                    <div className="grid grid-cols-4 gap-3 opacity-70">
-                       {unlockedIds.filter(id => !deckIds.includes(id)).map(id => {
-                          const c = CBG_CARDS.find(card => card.id === id)!;
+                    <div className="flex gap-2 mb-4">
+                       <button onClick={() => setCardFilter('REGULAR')} className={`flex-1 py-2 rounded-xl text-sm font-bold ${cardFilter === 'REGULAR' ? 'bg-slate-700 text-white' : 'bg-slate-800 text-slate-400'}`}>Regular Cards</button>
+                       <button onClick={() => setCardFilter('CHAMPION')} className={`flex-1 py-2 rounded-xl text-sm font-bold ${cardFilter === 'CHAMPION' ? 'bg-amber-600/30 text-amber-400 border border-amber-500/50' : 'bg-slate-800 text-slate-400'}`}>Champions</button>
+                    </div>
+                    <div className="grid grid-cols-4 gap-3">
+                       {CBG_CARDS.filter(c => (cardFilter === 'CHAMPION' ? c.isChampion : !c.isChampion) && !deckIds.includes(c.id)).map(c => {
+                          const isUnlocked = unlockedIds.includes(c.id) || promoUnlockedIds.includes(c.id);
                           return (
-                             <div key={id} onClick={() => setInfoModalCardId(id)} className="aspect-[3/4] rounded-xl border-2 border-slate-600 relative flex flex-col cursor-pointer overflow-hidden bg-slate-800 hover:border-slate-400 transition-colors group">
+                             <div key={c.id} onClick={() => setInfoModalCardId(c.id)} className={`aspect-[3/4] rounded-xl border-2 ${c.isChampion ? 'border-amber-600/50' : 'border-slate-600'} relative flex flex-col cursor-pointer overflow-hidden bg-slate-800 hover:border-slate-400 transition-colors group ${!isUnlocked ? 'opacity-40 grayscale' : 'opacity-80'}`}>
                                 <div className="h-[55%] w-full bg-slate-700 flex items-center justify-center relative shadow-inner">
                                    <UnitPreview card={c} />
                                 </div>
+                                {!isUnlocked && (
+                                   <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/60 pointer-events-none">
+                                      <Lock className="w-6 h-6 text-slate-400"/>
+                                   </div>
+                                )}
                                 <div className="flex-1 flex items-center justify-center p-1 bg-slate-800">
                                    <span className="text-[10px] font-bold text-center leading-tight drop-shadow text-white">{c.name}</span>
                                 </div>

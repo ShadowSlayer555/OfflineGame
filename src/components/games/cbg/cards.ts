@@ -6,6 +6,8 @@ export interface CardDef {
   secret: string;
   isBase: boolean;
   type: 'troop' | 'spell' | 'building';
+  isChampion?: boolean;
+  abilityDesc?: string;
   stats: {
     hp?: number;
     damage?: number;
@@ -59,5 +61,10 @@ export const CBG_CARDS: CardDef[] = [
   { id: 'c33', name: 'Tornado', description: 'Pulls enemies', cost: 3, secret: 'spin cycle', isBase: false, type: 'spell', color: '#6ee7b7', stats: { damage: 10, radius: 60 } },
   { id: 'c34', name: 'Executioner', description: 'Piercing axe throw', cost: 5, secret: 'axe toss', isBase: false, type: 'troop', color: '#1e293b', stats: { hp: 120, damage: 40, range: 45, speed: 20, count: 1 } },
   { id: 'c35', name: 'Cannon Cart', description: 'Mobile cannon', cost: 5, secret: 'wheel barrel', isBase: false, type: 'troop', color: '#854d0e', stats: { hp: 150, damage: 50, range: 60, speed: 20, count: 1 } },
-  { id: 'c36', name: 'Mega Knight', description: 'Huge jump damage', cost: 7, secret: 'heavy drop', isBase: false, type: 'troop', color: '#334155', stats: { hp: 450, damage: 50, range: 15, speed: 18, count: 1 } }
+  { id: 'c36', name: 'Mega Knight', description: 'Huge jump damage', cost: 7, secret: 'heavy drop', isBase: false, type: 'troop', color: '#334155', stats: { hp: 450, damage: 50, range: 15, speed: 18, count: 1 } },
+
+  // Champions
+  { id: 'ch1', name: 'Stormweaver', description: 'Summons chain lightning on attack', cost: 6, secret: 'lightning lord', isBase: false, type: 'troop', isChampion: true, abilityDesc: 'Strikes enemies with glowing blue lightning patterns', color: '#3b82f6', stats: { hp: 200, damage: 45, range: 80, speed: 20, count: 1 } },
+  { id: 'ch2', name: 'Inferno Titan', description: 'Launches bouncing glowing fireballs', cost: 7, secret: 'fire king', isBase: false, type: 'troop', isChampion: true, abilityDesc: 'Trails of glowing geometric shapes behind launched comets', color: '#ef4444', stats: { hp: 500, damage: 60, range: 45, speed: 15, count: 1 } },
+  { id: 'ch3', name: 'Void Walker', description: 'Uses glowing purple portals for attacks', cost: 5, secret: 'space bender', isBase: false, type: 'troop', isChampion: true, abilityDesc: 'Throws geometric starbursts from the void', color: '#9333ea', stats: { hp: 180, damage: 80, range: 60, speed: 30, count: 1 } }
 ];
