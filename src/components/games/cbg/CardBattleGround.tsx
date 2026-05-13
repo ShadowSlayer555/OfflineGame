@@ -618,6 +618,7 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
         {infoModalCardId && (() => {
            const infoC = CBG_CARDS.find(card => card.id === infoModalCardId)!;
            const inDeck = deckIds.includes(infoModalCardId);
+           const isUnlocked = unlockedIds.includes(infoModalCardId) || promoUnlockedIds.includes(infoModalCardId);
            return (
               <div className="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setInfoModalCardId(null)}>
                  <div className="bg-slate-800 border-2 border-slate-700 rounded-3xl w-full max-w-sm p-6 flex flex-col gap-6 shadow-2xl" onClick={e => e.stopPropagation()}>

@@ -293,7 +293,11 @@ export class CBGEngine {
          this.state.projectiles.push({
             id: `anim_${Date.now()}_${Math.random()}`,
             type: 'spell_anim',
+            team,
             x, y,
+            tx: x, ty: y,
+            speed: 0,
+            damage: 0,
             radius: 0,
             maxRadius: card.stats.radius!,
             color: card.color

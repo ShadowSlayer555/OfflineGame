@@ -89,19 +89,32 @@ export function ChessGame({ channel, isHost, onBackToLobby }: ChessGameProps) {
     }
   };
 
-  const onDrop = (sourceSquare: string, targetSquare: string) => {
+  const onDrop = ({ sourceSquare, targetSquare }: any) => {
     // Prevent moving if not our turn or game is over
-    if (!isMyTurn || gameOverStr) return false;
+    if (!isMyTurn || gameOverStr || !targetSquare) return false;
 
-    return makeMove({
+    const success = makeMove({
       from: sourceSquare,
       to: targetSquare,
       promotion: 'q', // always promote to queen for simplicity
     });
+
+    if (success) {
+      setSelectedSquare(null);
+      setOptionSquares({});
+    }
+
+    return success;
   };
 
-  const onSquareClick = (square: string) => {
+  const onSquareClick = ({ square }: any) => {
     if (!isMyTurn || gameOverStr) return;
+
+    if (selectedSquare === square) {
+      setSelectedSquare(null);
+      setOptionSquares({});
+      return;
+    }
 
     if (selectedSquare) {
       // Trying to move
@@ -167,16 +180,16 @@ export function ChessGame({ channel, isHost, onBackToLobby }: ChessGameProps) {
 
       <div className="w-full max-w-[320px] aspect-square rounded overflow-hidden shadow-2xl mb-8 touch-none">
         <Chessboard 
-          {...({
+          options={{
             position: fen,
             onPieceDrop: onDrop,
             onSquareClick: onSquareClick,
-            boardOrientation: boardOrientation,
-            customDarkSquareStyle: { backgroundColor: '#779556' },
-            customLightSquareStyle: { backgroundColor: '#ebecd0' },
-            customSquareStyles: optionSquares,
-            animationDuration: isNetworked ? 300 : 0 // remove animation for hotseat so rotation is clean
-          } as any)}
+            boardOrientation: boardOrientation as "white" | "black",
+            darkSquareStyle: { backgroundColor: '#779556' },
+            lightSquareStyle: { backgroundColor: '#ebecd0' },
+            squareStyles: optionSquares,
+            animationDurationInMs: isNetworked ? 300 : 0
+          }}
         />
       </div>
 
