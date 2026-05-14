@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GameMessage } from '../../types';
-import Matter from 'matter-js';
-const { Engine, World, Bodies, Body } = Matter;
+import * as MatterPkg from 'matter-js';
 import { Trophy, Zap, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { triggerHapticClick } from '../../lib/audioManager';
 
@@ -29,7 +28,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
   const guestInput = useRef({ dx: 0, dy: 0, jump: false, boost: false }); // Host reads this
 
   // --- Host Physics State ---
-  const engineRef = useRef<Engine | null>(null);
+  const engineRef = useRef<any>(null);
   const bodiesRef = useRef<any>({});
   const gameData = useRef({
     phase: 'COUNTDOWN', // COUNTDOWN | PLAYING | GOAL | FINISHED
@@ -89,6 +88,9 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
   useEffect(() => {
     if (!isHost) return;
 
+    const M = MatterPkg.Engine ? MatterPkg : (MatterPkg as any).default || MatterPkg;
+    const { Engine, World, Bodies, Body } = M;
+
     const engine = Engine.create({ gravity: { x: 0, y: 1.5, scale: 0.001 } });
     engineRef.current = engine;
 
@@ -136,6 +138,9 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
     bodiesRef.current = { ball, p1, p2 };
 
     const resetPositions = () => {
+      const M = MatterPkg.Engine ? MatterPkg : (MatterPkg as any).default || MatterPkg;
+      const { Body } = M;
+      
       Body.setPosition(ball, { x: cx, y: cy - 100 });
       Body.setVelocity(ball, { x: 0, y: 0 });
       Body.setAngularVelocity(ball, 0);
@@ -208,18 +213,21 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
       if (g.phase === 'PLAYING') {
         // Goal Check
         if (b.ball.position.x < 50 && b.ball.position.y > WORLD_HEIGHT - 250) {
+          const M = MatterPkg.Engine ? MatterPkg : (MatterPkg as any).default || MatterPkg;
+          
           g.score2++;
           g.phase = 'GOAL';
           // apply little pop to ball
-          Body.applyForce(b.ball, b.ball.position, {x: -0.1, y: -0.1});
+          M.Body.applyForce(b.ball, b.ball.position, {x: -0.1, y: -0.1});
         }
         if (b.ball.position.x > WORLD_WIDTH - 50 && b.ball.position.y > WORLD_HEIGHT - 250) {
           g.score1++;
           g.phase = 'GOAL';
-          Body.applyForce(b.ball, b.ball.position, {x: 0.1, y: -0.1});
+          M.Body.applyForce(b.ball, b.ball.position, {x: 0.1, y: -0.1});
         }
 
         const applyInput = (car: any, input: any, isP1: boolean) => {
+          const M = MatterPkg.Engine ? MatterPkg : (MatterPkg as any).default || MatterPkg;
           const grounded = car.position.y > WORLD_HEIGHT - 65; // roughly grounded
           let boostRef = isP1 ? 'p1Boost' : 'p2Boost';
           let doubleJumpRef = isP1 ? 'p1CanDoubleJump' : 'p2CanDoubleJump';
@@ -232,14 +240,14 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
              
              // Move horizontally
              if (Math.abs(input.dx) > 0.1) {
-                Body.applyForce(car, car.position, { x: input.dx * 0.005, y: 0 });
+                M.Body.applyForce(car, car.position, { x: input.dx * 0.005, y: 0 });
              } else {
                 // drag
-                Body.setVelocity(car, { x: car.velocity.x * 0.9, y: car.velocity.y });
+                M.Body.setVelocity(car, { x: car.velocity.x * 0.9, y: car.velocity.y });
              }
              // Keeps car upright
              if (Math.abs(car.angle) > 0.05) {
-                Body.setAngularVelocity(car, car.angularVelocity * 0.5 - car.angle * 0.05);
+                M.Body.setAngularVelocity(car, car.angularVelocity * 0.5 - car.angle * 0.05);
              }
              
              // Regen boost
@@ -253,23 +261,23 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
                  const diff = targetAngle - car.angle;
                  // normalize diff
                  const normalizedDiff = Math.atan2(Math.sin(diff), Math.cos(diff));
-                 Body.setAngularVelocity(car, car.angularVelocity * 0.9 + normalizedDiff * 0.02);
+                 M.Body.setAngularVelocity(car, car.angularVelocity * 0.9 + normalizedDiff * 0.02);
              } else {
-                 Body.setAngularVelocity(car, car.angularVelocity * 0.95);
+                 M.Body.setAngularVelocity(car, car.angularVelocity * 0.95);
              }
           }
 
           // Jump
           if (input.jump && (g as any)[jumpResetRef]) {
              if (grounded) {
-                 Body.setVelocity(car, { x: car.velocity.x, y: -15 });
+                 M.Body.setVelocity(car, { x: car.velocity.x, y: -15 });
                  (g as any)[jumpResetRef] = false;
              } else if ((g as any)[doubleJumpRef]) {
                  // Double jump towards pointing direction or straight up
                  const forceY = -12;
-                 Body.setVelocity(car, { x: car.velocity.x, y: forceY });
+                 M.Body.setVelocity(car, { x: car.velocity.x, y: forceY });
                  // also apply rotation force if holding stick? Sideswipe does flips, let's keep it simple
-                 Body.setAngularVelocity(car, car.angularVelocity + (Math.sign(input.dx) * 0.2));
+                 M.Body.setAngularVelocity(car, car.angularVelocity + (Math.sign(input.dx) * 0.2));
                  (g as any)[doubleJumpRef] = false;
                  (g as any)[jumpResetRef] = false;
              }
@@ -283,7 +291,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
              (g as any)[boostRef] -= BOOST_DRAIN;
              const forceX = Math.cos(car.angle) * 0.004;
              const forceY = Math.sin(car.angle) * 0.004;
-             Body.applyForce(car, car.position, { x: forceX, y: forceY });
+             M.Body.applyForce(car, car.position, { x: forceX, y: forceY });
           }
         };
 
@@ -291,7 +299,8 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
         applyInput(b.p2, guestInput.current, false);
       }
 
-      Engine.update(engine, 1000 / TICKS_PER_SEC);
+      const M2 = MatterPkg.Engine ? MatterPkg : (MatterPkg as any).default || MatterPkg;
+      M2.Engine.update(engine, 1000 / TICKS_PER_SEC);
       broadcastState();
       
       // Also update local ui
@@ -309,7 +318,8 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
 
     return () => {
       clearInterval(gameLoop);
-      Engine.clear(engine);
+      const M3 = MatterPkg.Engine ? MatterPkg : (MatterPkg as any).default || MatterPkg;
+      M3.Engine.clear(engine);
     };
   }, [isHost, channel]);
 
