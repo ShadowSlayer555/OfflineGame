@@ -201,7 +201,7 @@ export default function App() {
              setErrorTimer("Connection timed out. Devices might not be able to reach each other.");
              setAppState('HOSTING_SCAN_ANSWER');
          }
-      }, 10000);
+      }, 15000);
 
       const channel = channelsRef.current.get(activeGuestId);
       if (channel) {
@@ -341,7 +341,7 @@ export default function App() {
                 <Smartphone className="w-12 h-12 text-indigo-600 transform -rotate-3" />
               </div>
               <h2 className="text-4xl font-display font-extrabold mb-4 tracking-tight text-neutral-900">Local Multiplayer</h2>
-              <p className="text-neutral-500 text-lg font-medium leading-relaxed">Connect to a friend's hotspot and play anywhere, without internet.</p>
+              <p className="text-neutral-500 text-lg font-medium leading-relaxed">Connect to a friend's hotspot and play anywhere, without internet. Add this app to your bookmarks and home screen to ensure your browser remembers it while offline.</p>
             </div>
 
             <button

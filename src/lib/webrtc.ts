@@ -18,14 +18,14 @@ export async function getCompleteLocalDescription(peer: RTCPeerConnection, meta:
     };
     peer.addEventListener('icegatheringstatechange', checkState);
 
-    // Timeout fallback after 2s (since local network ICE candidates should be nearly instant)
+    // Timeout fallback after 7s (to allow STUN servers to resolve over slower hotspot connections)
     setTimeout(() => {
       if (peer.iceGatheringState !== 'complete') {
         peer.removeEventListener('icegatheringstatechange', checkState);
         const sdpString = JSON.stringify({ ...peer.localDescription?.toJSON(), meta });
         resolve(LZString.compressToEncodedURIComponent(sdpString));
       }
-    }, 2000);
+    }, 7000);
   });
 }
 

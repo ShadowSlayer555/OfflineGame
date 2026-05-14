@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GameMessage } from '../../types';
-import Matter from 'matter-js';
+import { Engine, World, Bodies, Body } from 'matter-js';
 import { Trophy, Zap, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { triggerHapticClick } from '../../lib/audioManager';
 
@@ -28,7 +28,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
   const guestInput = useRef({ dx: 0, dy: 0, jump: false, boost: false }); // Host reads this
 
   // --- Host Physics State ---
-  const engineRef = useRef<Matter.Engine | null>(null);
+  const engineRef = useRef<Engine | null>(null);
   const bodiesRef = useRef<any>({});
   const gameData = useRef({
     phase: 'COUNTDOWN', // COUNTDOWN | PLAYING | GOAL | FINISHED
@@ -88,29 +88,29 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
   useEffect(() => {
     if (!isHost) return;
 
-    const engine = Matter.Engine.create({ gravity: { x: 0, y: 1.5, scale: 0.001 } });
+    const engine = Engine.create({ gravity: { x: 0, y: 1.5, scale: 0.001 } });
     engineRef.current = engine;
 
     const cx = WORLD_WIDTH / 2;
     const cy = WORLD_HEIGHT / 2;
 
     // Static World
-    const ceiling = Matter.Bodies.rectangle(cx, -50, WORLD_WIDTH * 2, 100, { isStatic: true });
-    const floor = Matter.Bodies.rectangle(cx, WORLD_HEIGHT + 50, WORLD_WIDTH * 2, 100, { isStatic: true, friction: 0.1 });
-    const leftWallTop = Matter.Bodies.rectangle(-25, 100, 50, WORLD_HEIGHT, { isStatic: true });
-    const rightWallTop = Matter.Bodies.rectangle(WORLD_WIDTH + 25, 100, 50, WORLD_HEIGHT, { isStatic: true });
-    const leftWallBot = Matter.Bodies.rectangle(-25, WORLD_HEIGHT - 100, 50, 200, { isStatic: true });
-    const rightWallBot = Matter.Bodies.rectangle(WORLD_WIDTH + 25, WORLD_HEIGHT - 100, 50, 200, { isStatic: true });
+    const ceiling = Bodies.rectangle(cx, -50, WORLD_WIDTH * 2, 100, { isStatic: true });
+    const floor = Bodies.rectangle(cx, WORLD_HEIGHT + 50, WORLD_WIDTH * 2, 100, { isStatic: true, friction: 0.1 });
+    const leftWallTop = Bodies.rectangle(-25, 100, 50, WORLD_HEIGHT, { isStatic: true });
+    const rightWallTop = Bodies.rectangle(WORLD_WIDTH + 25, 100, 50, WORLD_HEIGHT, { isStatic: true });
+    const leftWallBot = Bodies.rectangle(-25, WORLD_HEIGHT - 100, 50, 200, { isStatic: true });
+    const rightWallBot = Bodies.rectangle(WORLD_WIDTH + 25, WORLD_HEIGHT - 100, 50, 200, { isStatic: true });
     
     // Goals: width 150, height 250
     // To make it a proper box goal, we add crossbars
-    const leftCrossbar = Matter.Bodies.rectangle(75, WORLD_HEIGHT - 250, 150, 20, { isStatic: true });
-    const rightCrossbar = Matter.Bodies.rectangle(WORLD_WIDTH - 75, WORLD_HEIGHT - 250, 150, 20, { isStatic: true });
+    const leftCrossbar = Bodies.rectangle(75, WORLD_HEIGHT - 250, 150, 20, { isStatic: true });
+    const rightCrossbar = Bodies.rectangle(WORLD_WIDTH - 75, WORLD_HEIGHT - 250, 150, 20, { isStatic: true });
 
     const wallOpts = [ceiling, floor, leftWallTop, rightWallTop, leftWallBot, rightWallBot, leftCrossbar, rightCrossbar];
 
     // Dynamic Bodies
-    const ball = Matter.Bodies.circle(cx, cy, 30, {
+    const ball = Bodies.circle(cx, cy, 30, {
       restitution: 0.8,
       friction: 0.05,
       frictionAir: 0.01,
@@ -118,7 +118,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
     });
 
     const createCar = (isP1: boolean) => {
-      const car = Matter.Bodies.rectangle(isP1 ? 200 : WORLD_WIDTH - 200, WORLD_HEIGHT - 40, 80, 40, {
+      const car = Bodies.rectangle(isP1 ? 200 : WORLD_WIDTH - 200, WORLD_HEIGHT - 40, 80, 40, {
         restitution: 0.2,
         friction: 0.1, // floor friction
         density: 0.005,
@@ -130,24 +130,24 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
     const p1 = createCar(true);
     const p2 = createCar(false);
 
-    Matter.World.add(engine.world, [...wallOpts, ball, p1, p2]);
+    World.add(engine.world, [...wallOpts, ball, p1, p2]);
 
     bodiesRef.current = { ball, p1, p2 };
 
     const resetPositions = () => {
-      Matter.Body.setPosition(ball, { x: cx, y: cy - 100 });
-      Matter.Body.setVelocity(ball, { x: 0, y: 0 });
-      Matter.Body.setAngularVelocity(ball, 0);
+      Body.setPosition(ball, { x: cx, y: cy - 100 });
+      Body.setVelocity(ball, { x: 0, y: 0 });
+      Body.setAngularVelocity(ball, 0);
 
-      Matter.Body.setPosition(p1, { x: 200, y: WORLD_HEIGHT - 100 });
-      Matter.Body.setVelocity(p1, { x: 0, y: 0 });
-      Matter.Body.setAngle(p1, 0);
-      Matter.Body.setAngularVelocity(p1, 0);
+      Body.setPosition(p1, { x: 200, y: WORLD_HEIGHT - 100 });
+      Body.setVelocity(p1, { x: 0, y: 0 });
+      Body.setAngle(p1, 0);
+      Body.setAngularVelocity(p1, 0);
 
-      Matter.Body.setPosition(p2, { x: WORLD_WIDTH - 200, y: WORLD_HEIGHT - 100 });
-      Matter.Body.setVelocity(p2, { x: 0, y: 0 });
-      Matter.Body.setAngle(p2, 0);
-      Matter.Body.setAngularVelocity(p2, 0);
+      Body.setPosition(p2, { x: WORLD_WIDTH - 200, y: WORLD_HEIGHT - 100 });
+      Body.setVelocity(p2, { x: 0, y: 0 });
+      Body.setAngle(p2, 0);
+      Body.setAngularVelocity(p2, 0);
       
       gameData.current.p1Boost = MAX_BOOST;
       gameData.current.p2Boost = MAX_BOOST;
@@ -210,12 +210,12 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
           g.score2++;
           g.phase = 'GOAL';
           // apply little pop to ball
-          Matter.Body.applyForce(b.ball, b.ball.position, {x: -0.1, y: -0.1});
+          Body.applyForce(b.ball, b.ball.position, {x: -0.1, y: -0.1});
         }
         if (b.ball.position.x > WORLD_WIDTH - 50 && b.ball.position.y > WORLD_HEIGHT - 250) {
           g.score1++;
           g.phase = 'GOAL';
-          Matter.Body.applyForce(b.ball, b.ball.position, {x: 0.1, y: -0.1});
+          Body.applyForce(b.ball, b.ball.position, {x: 0.1, y: -0.1});
         }
 
         const applyInput = (car: any, input: any, isP1: boolean) => {
@@ -231,14 +231,14 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
              
              // Move horizontally
              if (Math.abs(input.dx) > 0.1) {
-                Matter.Body.applyForce(car, car.position, { x: input.dx * 0.005, y: 0 });
+                Body.applyForce(car, car.position, { x: input.dx * 0.005, y: 0 });
              } else {
                 // drag
-                Matter.Body.setVelocity(car, { x: car.velocity.x * 0.9, y: car.velocity.y });
+                Body.setVelocity(car, { x: car.velocity.x * 0.9, y: car.velocity.y });
              }
              // Keeps car upright
              if (Math.abs(car.angle) > 0.05) {
-                Matter.Body.setAngularVelocity(car, car.angularVelocity * 0.5 - car.angle * 0.05);
+                Body.setAngularVelocity(car, car.angularVelocity * 0.5 - car.angle * 0.05);
              }
              
              // Regen boost
@@ -252,23 +252,23 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
                  const diff = targetAngle - car.angle;
                  // normalize diff
                  const normalizedDiff = Math.atan2(Math.sin(diff), Math.cos(diff));
-                 Matter.Body.setAngularVelocity(car, car.angularVelocity * 0.9 + normalizedDiff * 0.02);
+                 Body.setAngularVelocity(car, car.angularVelocity * 0.9 + normalizedDiff * 0.02);
              } else {
-                 Matter.Body.setAngularVelocity(car, car.angularVelocity * 0.95);
+                 Body.setAngularVelocity(car, car.angularVelocity * 0.95);
              }
           }
 
           // Jump
           if (input.jump && (g as any)[jumpResetRef]) {
              if (grounded) {
-                 Matter.Body.setVelocity(car, { x: car.velocity.x, y: -15 });
+                 Body.setVelocity(car, { x: car.velocity.x, y: -15 });
                  (g as any)[jumpResetRef] = false;
              } else if ((g as any)[doubleJumpRef]) {
                  // Double jump towards pointing direction or straight up
                  const forceY = -12;
-                 Matter.Body.setVelocity(car, { x: car.velocity.x, y: forceY });
+                 Body.setVelocity(car, { x: car.velocity.x, y: forceY });
                  // also apply rotation force if holding stick? Sideswipe does flips, let's keep it simple
-                 Matter.Body.setAngularVelocity(car, car.angularVelocity + (Math.sign(input.dx) * 0.2));
+                 Body.setAngularVelocity(car, car.angularVelocity + (Math.sign(input.dx) * 0.2));
                  (g as any)[doubleJumpRef] = false;
                  (g as any)[jumpResetRef] = false;
              }
@@ -282,7 +282,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
              (g as any)[boostRef] -= BOOST_DRAIN;
              const forceX = Math.cos(car.angle) * 0.004;
              const forceY = Math.sin(car.angle) * 0.004;
-             Matter.Body.applyForce(car, car.position, { x: forceX, y: forceY });
+             Body.applyForce(car, car.position, { x: forceX, y: forceY });
           }
         };
 
@@ -290,7 +290,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
         applyInput(b.p2, guestInput.current, false);
       }
 
-      Matter.Engine.update(engine, 1000 / TICKS_PER_SEC);
+      Engine.update(engine, 1000 / TICKS_PER_SEC);
       broadcastState();
       
       // Also update local ui
@@ -308,7 +308,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
 
     return () => {
       clearInterval(gameLoop);
-      Matter.Engine.clear(engine);
+      Engine.clear(engine);
     };
   }, [isHost, channel]);
 
