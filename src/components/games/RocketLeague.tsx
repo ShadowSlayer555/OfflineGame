@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GameMessage } from '../../types';
-import { Engine, World, Bodies, Body } from 'matter-js';
+import Matter from 'matter-js';
+const { Engine, World, Bodies, Body } = Matter;
 import { Trophy, Zap, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { triggerHapticClick } from '../../lib/audioManager';
 
