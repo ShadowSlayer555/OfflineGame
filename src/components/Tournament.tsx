@@ -5,6 +5,7 @@ import { Pong } from './games/Pong';
 import { ChessGame } from './games/ChessGame';
 import { CardBattleGround } from './games/cbg/CardBattleGround';
 import { RocketLeague } from './games/RocketLeague';
+import { ErrorBoundary } from './ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, ChevronRight, Swords } from 'lucide-react';
 
@@ -307,7 +308,7 @@ export function Tournament({ gameType, myId, myName, players, isGlobalHost, chan
              {gameType === 'PONG' && <Pong channel={vc as any} isHost={isGameHost} onBackToLobby={() => {}} />}
              {gameType === 'CHESS' && <ChessGame channel={vc as any} isHost={isGameHost} onBackToLobby={() => {}} />}
              {gameType === 'CARD_BATTLE' && <CardBattleGround channel={vc as any} isHost={isGameHost} onBackToLobby={() => {}} />}
-             {gameType === 'ROCKET_LEAGUE' && <RocketLeague channel={vc as any} isHost={isGameHost} onBackToLobby={() => {}} />}
+             {gameType === 'ROCKET_LEAGUE' && <ErrorBoundary><RocketLeague channel={vc as any} isHost={isGameHost} onBackToLobby={() => {}} /></ErrorBoundary>}
 
              <div className="fixed bottom-6 right-6 flex flex-col gap-2 z-50">
                 {(isGameHost || isGlobalHost) && (

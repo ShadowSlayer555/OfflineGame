@@ -16,6 +16,7 @@ import { HiddenRole } from './components/games/HiddenRole';
 import { Tournament } from './components/Tournament';
 import { CardBattleGround } from './components/games/cbg/CardBattleGround';
 import { RocketLeague } from './components/games/RocketLeague';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 type AppState =
   | 'IDLE'
@@ -586,7 +587,7 @@ export default function App() {
                 {selectedGame === 'PONG' && <Pong channel={channelsRef.current.values().next().value} isHost={isHostRole} onBackToLobby={handleBackToLobby} />}
                 {selectedGame === 'CHESS' && <ChessGame channel={channelsRef.current.values().next().value} isHost={isHostRole} onBackToLobby={handleBackToLobby} />}
                 {selectedGame === 'CARD_BATTLE' && <CardBattleGround channel={channelsRef.current.values().next().value} isHost={isHostRole} onBackToLobby={handleBackToLobby} />}
-                {selectedGame === 'ROCKET_LEAGUE' && <RocketLeague channel={channelsRef.current.values().next().value} isHost={isHostRole} onBackToLobby={handleBackToLobby} />}
+                {selectedGame === 'ROCKET_LEAGUE' && <ErrorBoundary><RocketLeague channel={channelsRef.current.values().next().value} isHost={isHostRole} onBackToLobby={handleBackToLobby} /></ErrorBoundary>}
               </>
             )}
           </div>
