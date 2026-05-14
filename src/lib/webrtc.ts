@@ -35,7 +35,10 @@ export function decodeDescription(encoded: string): RTCSessionDescriptionInit & 
   return JSON.parse(decompressed);
 }
 
-// Config string for local P2P without STUN/TURN fallback.
+// Config string for local P2P with STUN fallback.
 export const rtcConfig: RTCConfiguration = {
-  iceServers: [], // empty for local wifi direct/hotspot only
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ],
 };

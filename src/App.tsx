@@ -23,9 +23,11 @@ type AppState =
   | 'HOST_CHOOSE_NAME'
   | 'HOSTING_OFFER'
   | 'HOSTING_SCAN_ANSWER'
+  | 'HOSTING_CONNECTING'
   | 'HOSTING_GUEST_CONNECTED'
   | 'JOIN_CHOOSE_NAME'
   | 'JOIN_SCAN_OFFER'
+  | 'JOIN_CONNECTING'
   | 'JOIN_ANSWER'
   | 'LOBBY'
   | 'PLAYING';
@@ -172,14 +174,35 @@ export default function App() {
     try {
       if (!activeGuestId) return;
       const peer = peersRef.current.get(activeGuestId);
-      if (!peer) return;
+      if (!peer || peer.signalingState === 'stable') {
+        // Already processed
+        return;
+      }
       
       const desc = decodeDescription(decodedSdp);
       const guestName = desc.meta?.guestName || `Guest ${connectedGuests.length + 1}`;
       
+      triggerHapticClick();
       await peer.setRemoteDescription(desc);
       setConnectedGuests(prev => [...prev, { id: activeGuestId, name: guestName }]);
-      // State transition will happen in channel.onopen
+      setAppState('HOSTING_CONNECTING');
+      
+      // Handle potential connection timeouts
+      const timeoutId = setTimeout(() => {
+         if (channel && channel.readyState !== 'open') {
+             setErrorTimer("Connection timed out. Devices might not be able to reach each other.");
+             setAppState('HOSTING_SCAN_ANSWER');
+         }
+      }, 10000);
+
+      const channel = channelsRef.current.get(activeGuestId);
+      if (channel) {
+         channel.onopen = () => {
+           clearTimeout(timeoutId);
+           setAppState('HOSTING_GUEST_CONNECTED');
+         };
+      }
+      
     } catch (e: any) {
       console.warn("Invalid answer code", e);
     }
@@ -192,8 +215,12 @@ export default function App() {
 
   const joinScanOffer = async (decodedSdp: string) => {
     try {
-      const peer = new RTCPeerConnection(rtcConfig);
       const myId = 'host';
+      if (peersRef.current.has(myId) && peersRef.current.get(myId)?.signalingState !== 'stable') {
+         return; // Already connecting
+      }
+
+      const peer = new RTCPeerConnection(rtcConfig);
       peersRef.current.set(myId, peer);
 
       const channel = peer.createDataChannel('game', { negotiated: true, id: 0 });
@@ -203,8 +230,9 @@ export default function App() {
         // Wait for host to send GO_TO_LOBBY or just wait
       };
 
+      triggerHapticClick();
+      setAppState('JOIN_CONNECTING');
       const desc = decodeDescription(decodedSdp);
-      // could extrace hostName from desc.meta.hostName if needed
       await peer.setRemoteDescription(desc);
 
       const answer = await peer.createAnswer();
@@ -213,6 +241,8 @@ export default function App() {
       const compressedAnswer = await getCompleteLocalDescription(peer, { guestName: playerName });
       setLocalData(compressedAnswer);
       setAppState('JOIN_ANSWER');
+      
+      // Also add a fallback if we don't connect within 10 seconds?
     } catch (e: any) {
       console.warn("Invalid offer code", e);
     }
@@ -420,6 +450,16 @@ export default function App() {
           </div>
         )}
 
+        {appState === 'HOSTING_CONNECTING' && (
+          <div className="space-y-6 text-center w-full flex flex-col items-center animate-in fade-in zoom-in duration-300">
+             <div>
+              <h2 className="text-3xl font-display font-bold mb-2 tracking-tight text-neutral-900">Connecting...</h2>
+              <p className="text-lg text-neutral-500 font-medium mb-8">Establishing peer-to-peer connection.</p>
+            </div>
+            <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+          </div>
+        )}
+
         {appState === 'HOSTING_GUEST_CONNECTED' && (
           <div className="space-y-6 text-center w-full flex flex-col items-center animate-in fade-in zoom-in-95 duration-300">
              <div>
@@ -469,6 +509,16 @@ export default function App() {
               <p className="text-lg text-neutral-500 font-medium mb-8">Scan the host's QR code.</p>
             </div>
             <QRScanner onScan={joinScanOffer} />
+          </div>
+        )}
+
+        {appState === 'JOIN_CONNECTING' && (
+          <div className="space-y-6 text-center w-full flex flex-col items-center animate-in fade-in zoom-in duration-300">
+             <div>
+              <h2 className="text-3xl font-display font-bold mb-2 tracking-tight text-neutral-900">Processing...</h2>
+              <p className="text-lg text-neutral-500 font-medium mb-8">Generating your connection code.</p>
+            </div>
+            <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
           </div>
         )}
 
