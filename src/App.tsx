@@ -33,6 +33,7 @@ type AppState =
   | 'JOIN_ONLINE_LOBBY'
   | 'JOIN_CONNECTING'
   | 'JOIN_ANSWER'
+  | 'JOIN_WAITING_FOR_HOST'
   | 'LOBBY'
   | 'PLAYING';
 
@@ -355,6 +356,10 @@ export default function App() {
              channelsRef.current.set(peerMyId, channel);
              setChannelsUpdated(c => c + 1);
              
+             channel.onopen = () => {
+                 setAppState('JOIN_WAITING_FOR_HOST');
+             };
+             
              const desc = decodeDescription(data.sdp);
              await peer.setRemoteDescription(desc);
 
@@ -398,7 +403,7 @@ export default function App() {
       setChannelsUpdated(c => c + 1);
       
       channel.onopen = () => {
-        // Wait for host to send GO_TO_LOBBY or just wait
+        setAppState('JOIN_WAITING_FOR_HOST');
       };
 
       triggerHapticClick();
@@ -447,6 +452,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans flex flex-col items-center overflow-x-hidden selection:bg-indigo-100">
+      {!(appState === 'PLAYING' && selectedGame === 'ROCKET_LEAGUE') && (
       <header className="w-full max-w-lg mx-auto p-5 flex justify-between items-center bg-white/80 backdrop-blur-md shadow-[0_1px_3px_rgb(0_0_0_/_0.05)] sticky top-0 z-50">
         <h1 className="text-xl font-display font-bold flex items-center gap-2 tracking-tight text-neutral-900">
           <div className="bg-indigo-600 p-1.5 rounded-lg shadow-sm">
@@ -478,6 +484,7 @@ export default function App() {
          </button>
         )}
       </header>
+      )}
 
       <main className={`w-full mx-auto flex-1 flex flex-col items-center justify-center relative ${appState === 'PLAYING' && selectedGame === 'ROCKET_LEAGUE' ? '' : 'max-w-lg p-6 sm:p-8'}`}>
         <button
@@ -711,12 +718,10 @@ export default function App() {
                     <span className="font-bold text-neutral-800 text-lg">{guest.name}</span>
                  </div>
                ))}
-               {connectedGuests.length === 0 && (
-                 <div className="p-4 text-neutral-400 font-medium flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-neutral-300 border-t-neutral-400 rounded-full animate-spin"></div>
-                    Searching...
-                 </div>
-               )}
+               <div className="p-4 text-neutral-400 font-medium flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-neutral-300 border-t-neutral-400 rounded-full animate-spin"></div>
+                  {connectedGuests.length === 0 ? 'Searching for players...' : 'Listening for more players...'}
+               </div>
             </div>
 
             <button
@@ -800,9 +805,9 @@ export default function App() {
           </div>
         )}
 
-        {appState === 'JOIN_ANSWER' && (
+        {(appState === 'JOIN_ANSWER' || appState === 'JOIN_WAITING_FOR_HOST') && (
           <div className="space-y-6 text-center w-full animate-in fade-in slide-in-from-right duration-300">
-            {localData ? (
+            {(appState === 'JOIN_ANSWER' && localData) ? (
                <>
                  <div>
                    <h2 className="text-3xl font-display font-bold mb-2 tracking-tight text-neutral-900">Join: Step 2</h2>

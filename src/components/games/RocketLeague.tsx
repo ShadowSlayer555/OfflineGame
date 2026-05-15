@@ -100,7 +100,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
     const M = MatterPkg.Engine ? MatterPkg : (MatterPkg as any).default || MatterPkg;
     const { Engine, World, Bodies, Body } = M;
 
-    const engine = Engine.create({ gravity: { x: 0, y: 1.5, scale: 0.001 } });
+    const engine = Engine.create({ gravity: { x: 0, y: 0.8, scale: 0.001 } });
     engineRef.current = engine;
 
     const cx = WORLD_WIDTH / 2;
@@ -143,18 +143,18 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
 
     // Dynamic Bodies
     const ball = Bodies.circle(cx, cy, 30, {
-      restitution: 0.8,
-      friction: 0.05,
-      frictionAir: 0.01,
-      density: 0.001,
+      restitution: 0.9,
+      friction: 0.02,
+      frictionAir: 0.005,
+      density: 0.0002, // much lighter ball
     });
 
     const createCar = (isP1: boolean) => {
       const car = Bodies.rectangle(isP1 ? 200 : WORLD_WIDTH - 200, WORLD_HEIGHT - 40, 80, 40, {
-        restitution: 0.2,
-        friction: 0.1, // floor friction
-        density: 0.005,
-        frictionAir: 0.02,
+        restitution: 0.3,
+        friction: 0.05, 
+        density: 0.003, // lighter car
+        frictionAir: 0.015,
       });
       return car;
     };
@@ -334,8 +334,8 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
              }
 
              // Increased boost for faster launch
-             const forceX = Math.cos(boostAngle) * 0.015;
-             const forceY = Math.sin(boostAngle) * 0.015;
+             const forceX = Math.cos(boostAngle) * 0.025;
+             const forceY = Math.sin(boostAngle) * 0.025;
              M.Body.applyForce(car, car.position, { x: forceX, y: forceY });
           }
         };
@@ -518,31 +518,35 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
                {/* Player 1 (Indigo) */}
                <div className="absolute top-0 left-0 w-[80px] h-[40px] will-change-transform z-20"
                     style={{ transform: `translate(${gameState.p1.x - 40}px, ${gameState.p1.y - 20}px) rotate(${gameState.p1.a}rad)` }}>
-                    <div className="w-full h-full bg-indigo-500 rounded-xl border-[4px] border-indigo-400 relative shadow-[0_0_20px_rgba(99,102,241,0.5)] z-20">
-                         <div className="absolute right-2 top-1 bottom-1 w-4 bg-indigo-300/50 rounded" />
-                         {/* Exhaust visual */}
-                         {gameState.p1.b < MAX_BOOST && <div className="absolute left-[-20px] top-1/2 -translate-y-1/2 w-[20px] h-[10px] bg-sky-200 blur-[2px] rounded-full" />}
+                    <div className="w-full h-[32px] bg-indigo-500 rounded-xl border-[3px] border-indigo-400 relative shadow-[inset_0_-5px_10px_rgba(0,0,0,0.2)] z-20 overflow-hidden">
+                         <div className="absolute right-2 top-1 bottom-1 w-6 bg-indigo-300/80 rounded-sm" />
                     </div>
+                    {/* Exhaust visual */}
+                    {gameState.p1.b < MAX_BOOST && <div className="absolute left-[-30px] top-1/2 -translate-y-1/2 w-[40px] h-[15px] bg-sky-300 blur-[4px] rounded-full z-10" />}
                     {/* Wheels */}
-                    <div className="absolute left-[10%] -bottom-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
-                    <div className="absolute right-[10%] -bottom-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
-                    <div className="absolute left-[10%] -top-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
-                    <div className="absolute right-[10%] -top-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
+                    <div className="absolute left-[10%] -bottom-2 w-[24px] h-[24px] bg-slate-800 rounded-full border-[4px] border-slate-950 z-30 flex items-center justify-center">
+                        <div className="w-2 h-2 bg-slate-500 rounded-full" />
+                    </div>
+                    <div className="absolute right-[10%] -bottom-2 w-[24px] h-[24px] bg-slate-800 rounded-full border-[4px] border-slate-950 z-30 flex items-center justify-center">
+                        <div className="w-2 h-2 bg-slate-500 rounded-full" />
+                    </div>
                </div>
 
                {/* Player 2 (Rose) */}
                <div className="absolute top-0 left-0 w-[80px] h-[40px] will-change-transform z-20"
                     style={{ transform: `translate(${gameState.p2.x - 40}px, ${gameState.p2.y - 20}px) rotate(${gameState.p2.a}rad)` }}>
-                    <div className="w-full h-full bg-rose-500 rounded-xl border-[4px] border-rose-400 relative shadow-[0_0_20px_rgba(244,63,94,0.5)] z-20">
-                         <div className="absolute left-2 top-1 bottom-1 w-4 bg-rose-300/50 rounded" />
-                         {/* Exhaust visual */}
-                         {gameState.p2.b < MAX_BOOST && <div className="absolute right-[-20px] top-1/2 -translate-y-1/2 w-[20px] h-[10px] bg-sky-200 blur-[2px] rounded-full" />}
+                    <div className="w-full h-[32px] bg-rose-500 rounded-xl border-[3px] border-rose-400 relative shadow-[inset_0_-5px_10px_rgba(0,0,0,0.2)] z-20 overflow-hidden">
+                         <div className="absolute left-2 top-1 bottom-1 w-6 bg-rose-300/80 rounded-sm" />
                     </div>
+                    {/* Exhaust visual */}
+                    {gameState.p2.b < MAX_BOOST && <div className="absolute right-[-30px] top-1/2 -translate-y-1/2 w-[40px] h-[15px] bg-sky-300 blur-[4px] rounded-full z-10" />}
                     {/* Wheels */}
-                    <div className="absolute left-[10%] -bottom-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
-                    <div className="absolute right-[10%] -bottom-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
-                    <div className="absolute left-[10%] -top-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
-                    <div className="absolute right-[10%] -top-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
+                    <div className="absolute left-[10%] -bottom-2 w-[24px] h-[24px] bg-slate-800 rounded-full border-[4px] border-slate-950 z-30 flex items-center justify-center">
+                        <div className="w-2 h-2 bg-slate-500 rounded-full" />
+                    </div>
+                    <div className="absolute right-[10%] -bottom-2 w-[24px] h-[24px] bg-slate-800 rounded-full border-[4px] border-slate-950 z-30 flex items-center justify-center">
+                        <div className="w-2 h-2 bg-slate-500 rounded-full" />
+                    </div>
                </div>
             </>
         )}
