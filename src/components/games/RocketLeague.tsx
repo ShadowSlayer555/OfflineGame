@@ -62,13 +62,15 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
   const [camera, setCamera] = useState({ x: 0, y: 0, scale: 1 });
 
   useEffect(() => {
-      if (!gameState) return;
+      if (!gameState || viewport.w === 0) return;
       const myCar = isHost ? gameState.p1 : gameState.p2;
       const b = gameState.ball;
       
+      const fullFieldScale = Math.min(viewport.w / WORLD_WIDTH, viewport.h / WORLD_HEIGHT) * 0.95;
+      
       let targetX = WORLD_WIDTH / 2;
       let targetY = WORLD_HEIGHT / 2;
-      let idealScale = 0.4; // Show whole field by default
+      let idealScale = fullFieldScale || 0.4; // Show whole field by default
 
       if (gameState.phase === 'PLAYING') {
           // Weight towards the car, but still include ball
@@ -77,8 +79,10 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
           
           const dist = Math.sqrt((myCar.x - b.x)**2 + (myCar.y - b.y)**2);
           
-          // Players POV is too zoomed in, change max to 0.65 and min to 0.4
-          idealScale = Math.max(0.4, Math.min(0.65, 800 / (dist + 600)));
+          // Allow zooming in closer when playing, but not too far out
+          const minScale = fullFieldScale;
+          const maxScale = Math.max(fullFieldScale * 1.5, 0.65);
+          idealScale = Math.max(minScale, Math.min(maxScale, 800 / (dist + 600)));
       }
 
       // Smooth interp
@@ -87,7 +91,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
           y: prev.y + (targetY - prev.y) * 0.1,
           scale: prev.scale + (idealScale - prev.scale) * 0.05
       }));
-  }, [gameState, isHost]);
+  }, [gameState, isHost, viewport]);
 
   // Set up Host physics
   useEffect(() => {
@@ -408,8 +412,10 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
       }
       
       setJoystickThumb({x: dx, y: dy});
-      localInput.current.dx = dx / maxDist;
-      localInput.current.dy = dy / maxDist;
+      // Increase sensitivity by multiplying by 1.5, cap at [-1, 1]
+      const sens = 1.5;
+      localInput.current.dx = Math.max(-1, Math.min(1, (dx / maxDist) * sens));
+      localInput.current.dy = Math.max(-1, Math.min(1, (dy / maxDist) * sens));
       sendInput();
   };
 
@@ -436,7 +442,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
   };
 
   return (
-    <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center relative touch-none select-none overflow-hidden" ref={containerRef}>
+    <div className="w-full max-w-5xl min-h-[300px] aspect-video md:aspect-[21/9] bg-slate-900 flex flex-col items-center justify-center relative touch-none select-none overflow-hidden rounded-[2rem] shadow-2xl" ref={containerRef}>
       
       {/* HUD Info */}
       <div className="absolute top-4 left-0 right-0 flex justify-between px-8 z-20 pointer-events-none">
