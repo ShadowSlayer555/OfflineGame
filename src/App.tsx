@@ -1,6 +1,6 @@
 import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useRef, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
+import mqtt, { MqttClient } from 'mqtt';
 import { QRScanner } from './components/QRScanner';
 import { decodeDescription, getCompleteLocalDescription, rtcConfig } from './lib/webrtc';
 import { Smartphone, WifiOff, ScanLine, QrCode, BookOpen, Plus, ChevronRight, User, Volume2, VolumeX, Globe } from 'lucide-react';
@@ -41,8 +41,9 @@ export default function App() {
   const [localData, setLocalData] = useState<string>(''); // Base64 compressed SDP
   const [errorTimer, setErrorTimer] = useState<string | null>(null);
   
-  // Socket.io for Online
-  const socketRef = useRef<Socket | null>(null);
+  // MQTT for Online
+  const mqttRef = useRef<MqttClient | null>(null);
+  const myMqttIdRef = useRef<string | null>(null);
   const [availableHosts, setAvailableHosts] = useState<any[]>([]);
   const [onlineHostId, setOnlineHostId] = useState<string | null>(null);
 
@@ -233,55 +234,68 @@ export default function App() {
     setIsHostRole(true);
     setAppState('HOST_ONLINE_LOBBY');
     
-    if (socketRef.current) socketRef.current.disconnect();
-    const socket = io({ path: '/socket.io' });
-    socketRef.current = socket;
+    if (mqttRef.current) mqttRef.current.end();
+    const myId = `host-${Math.random().toString(36).substring(2, 9)}`;
+    myMqttIdRef.current = myId;
 
-    socket.on('connect', () => {
-       socket.emit('register_host', { name: playerName, online: true });
+    const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+      clientId: myId,
+      will: {
+        topic: `tt-minigames/lobby/hosts/${myId}`,
+        payload: '',
+        retain: true,
+        qos: 1
+      }
+    });
+    mqttRef.current = client;
+
+    client.on('connect', () => {
+       client.publish(`tt-minigames/lobby/hosts/${myId}`, JSON.stringify({ name: playerName }), { retain: true, qos: 1 });
+       client.subscribe(`tt-minigames/lobby/p/${myId}`);
     });
 
-    socket.on('host_request', async (data: { hostId: string, hostName: string }) => {
-       const guestSocketId = data.hostId;
-       
-       // Accept the request
-       socket.emit('client_accept_request', { hostId: guestSocketId, joinerName: playerName });
-       
-       const guestId = `guest-${guestSocketId}`;
-       setActiveGuestId(guestId);
-       
-       const peer = new RTCPeerConnection(rtcConfig);
-       peersRef.current.set(guestId, peer);
+    client.on('message', async (topic, message) => {
+       if (topic === `tt-minigames/lobby/p/${myId}`) {
+          const data = JSON.parse(message.toString());
+          if (data.type === 'host_request') {
+             const guestMqttId = data.sourceId;
+             
+             // Accept the request
+             client.publish(`tt-minigames/lobby/p/${guestMqttId}`, JSON.stringify({ type: 'client_accept_request' }));
+             
+             const guestId = `guest-${guestMqttId}`;
+             setActiveGuestId(guestId);
+             
+             const peer = new RTCPeerConnection(rtcConfig);
+             peersRef.current.set(guestId, peer);
 
-       peer.oniceconnectionstatechange = () => {
-          if (peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'disconnected') {
-              setErrorTimer(`Connection lost with ${data.hostName}`);
+             peer.oniceconnectionstatechange = () => {
+                if (peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'disconnected') {
+                    setErrorTimer(`Connection lost with ${data.hostName}`);
+                }
+             };
+
+             const channel = peer.createDataChannel('game', { negotiated: true, id: 0 });
+             channelsRef.current.set(guestId, channel);
+
+             channel.onopen = () => {
+               setConnectedGuests(prev => [...prev, { id: guestId, name: data.hostName }]);
+               channel.send(JSON.stringify({ type: 'SET_ID', payload: { id: guestId, guests: connectedGuests, hostName: playerName } }));
+             };
+             
+             const offer = await peer.createOffer();
+             await peer.setLocalDescription(offer);
+
+             const compressedOffer = await getCompleteLocalDescription(peer, { hostName: playerName });
+             client.publish(`tt-minigames/lobby/p/${guestMqttId}`, JSON.stringify({ type: 'receive_offer', sourceId: myId, sdp: compressedOffer }));
+          } else if (data.type === 'receive_answer') {
+             const guestId = `guest-${data.sourceId}`;
+             const peer = peersRef.current.get(guestId);
+             if (peer) {
+                const desc = decodeDescription(data.sdp);
+                await peer.setRemoteDescription(desc);
+             }
           }
-       };
-
-       const channel = peer.createDataChannel('game', { negotiated: true, id: 0 });
-       channelsRef.current.set(guestId, channel);
-
-       channel.onopen = () => {
-         setConnectedGuests(prev => [...prev, { id: guestId, name: data.hostName }]);
-         // Send GO_TO_LOBBY to the new guest if we are already in lobby
-         channel.send(JSON.stringify({ type: 'SET_ID', payload: { id: guestId, guests: connectedGuests, hostName: playerName } }));
-       };
-       
-       const offer = await peer.createOffer();
-       await peer.setLocalDescription(offer);
-
-       // Wait for ICE complete
-       const compressedOffer = await getCompleteLocalDescription(peer, { hostName: playerName });
-       socket.emit('send_offer', { targetId: guestSocketId, sdp: compressedOffer });
-    });
-
-    socket.on('receive_answer', async (data: { sourceId: string, sdp: string }) => {
-       const guestId = `guest-${data.sourceId}`;
-       const peer = peersRef.current.get(guestId);
-       if (peer) {
-          const desc = decodeDescription(data.sdp);
-          await peer.setRemoteDescription(desc);
        }
     });
   };
@@ -290,51 +304,71 @@ export default function App() {
     setIsHostRole(false);
     setAppState('JOIN_ONLINE_LOBBY');
 
-    if (socketRef.current) socketRef.current.disconnect();
-    const socket = io({ path: '/socket.io' });
-    socketRef.current = socket;
+    if (mqttRef.current) mqttRef.current.end();
+    const myId = `guest-${Math.random().toString(36).substring(2, 9)}`;
+    myMqttIdRef.current = myId;
 
-    socket.on('connect', () => {
-       socket.emit('register_client', { name: playerName, online: true });
+    const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', { clientId: myId });
+    mqttRef.current = client;
+
+    client.on('connect', () => {
+       client.subscribe(`tt-minigames/lobby/hosts/+`);
+       client.subscribe(`tt-minigames/lobby/p/${myId}`);
+       setAvailableHosts([]);
     });
 
-    socket.on('client_list_update', (clients: any[]) => {
-       const hosts = clients.filter(c => c.isHost);
-       setAvailableHosts(hosts);
-    });
-
-    socket.on('receive_offer', async (data: { sourceId: string, sdp: string }) => {
-       const hostSocketId = data.sourceId;
-       setAppState('JOIN_CONNECTING');
-       
-       const myId = 'host';
-       const peer = new RTCPeerConnection(rtcConfig);
-       peersRef.current.set(myId, peer);
-
-       peer.oniceconnectionstatechange = () => {
-          if (peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'disconnected') {
-              setErrorTimer("Connection lost with host.");
-              setAppState('JOIN_ONLINE_LOBBY');
+    client.on('message', async (topic, message) => {
+       if (topic.startsWith('tt-minigames/lobby/hosts/')) {
+          const hostId = topic.split('/').pop();
+          if (message.length === 0) {
+             setAvailableHosts(prev => prev.filter(h => h.id !== hostId));
+          } else {
+             try {
+               const hostData = JSON.parse(message.toString());
+               setAvailableHosts(prev => {
+                  if (prev.find(h => h.id === hostId)) return prev;
+                  return [...prev, { id: hostId, ...hostData }];
+               });
+             } catch (e) {}
           }
-       };
+       } else if (topic === `tt-minigames/lobby/p/${myId}`) {
+          const data = JSON.parse(message.toString());
+          if (data.type === 'receive_offer') {
+             const hostMqttId = data.sourceId;
+             setAppState('JOIN_CONNECTING');
+             
+             const peerMyId = 'host';
+             const peer = new RTCPeerConnection(rtcConfig);
+             peersRef.current.set(peerMyId, peer);
 
-       const channel = peer.createDataChannel('game', { negotiated: true, id: 0 });
-       channelsRef.current.set(myId, channel);
-       
-       const desc = decodeDescription(data.sdp);
-       await peer.setRemoteDescription(desc);
+             peer.oniceconnectionstatechange = () => {
+                if (peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'disconnected') {
+                    setErrorTimer("Connection lost with host.");
+                    setAppState('JOIN_ONLINE_LOBBY');
+                }
+             };
 
-       const answer = await peer.createAnswer();
-       await peer.setLocalDescription(answer);
+             const channel = peer.createDataChannel('game', { negotiated: true, id: 0 });
+             channelsRef.current.set(peerMyId, channel);
+             
+             const desc = decodeDescription(data.sdp);
+             await peer.setRemoteDescription(desc);
 
-       const compressedAnswer = await getCompleteLocalDescription(peer, { guestName: playerName });
-       socket.emit('send_answer', { targetId: hostSocketId, sdp: compressedAnswer });
+             const answer = await peer.createAnswer();
+             await peer.setLocalDescription(answer);
+
+             const compressedAnswer = await getCompleteLocalDescription(peer, { guestName: playerName });
+             client.publish(`tt-minigames/lobby/p/${hostMqttId}`, JSON.stringify({ type: 'receive_answer', sourceId: myId, sdp: compressedAnswer }));
+          }
+       }
     });
   };
 
-  const joinOnlineHost = (hostSocketId: string) => {
-    setOnlineHostId(hostSocketId);
-    socketRef.current?.emit('host_request_client', { clientId: hostSocketId, hostName: playerName });
+  const joinOnlineHost = (hostId: string) => {
+    setOnlineHostId(hostId);
+    if (mqttRef.current && myMqttIdRef.current) {
+        mqttRef.current.publish(`tt-minigames/lobby/p/${hostId}`, JSON.stringify({ type: 'host_request', sourceId: myMqttIdRef.current, hostName: playerName }));
+    }
     setAppState('JOIN_CONNECTING');
   };
 
@@ -400,9 +434,9 @@ export default function App() {
     channelsRef.current.clear();
     setConnectedGuests([]);
     setActiveGuestId(null);
-    if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
+    if (mqttRef.current) {
+        mqttRef.current.end();
+        mqttRef.current = null;
     }
   };
 
@@ -727,7 +761,13 @@ export default function App() {
             </div>
             
             <button
-               onClick={() => socketRef.current?.emit('get_clients', { online: true })}
+               onClick={() => {
+                   setAvailableHosts([]);
+                   mqttRef.current?.unsubscribe('tt-minigames/lobby/hosts/+');
+                   setTimeout(() => {
+                       mqttRef.current?.subscribe('tt-minigames/lobby/hosts/+');
+                   }, 100);
+               }}
                className="mt-6 text-indigo-600 font-bold px-4 py-2 hover:bg-indigo-50 rounded-lg transition-colors"
             >
                Refresh List

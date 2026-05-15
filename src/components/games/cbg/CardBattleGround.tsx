@@ -936,6 +936,7 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
+      style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'none' }}
     >
        {/* Game Canvas Container */}
        <div className="flex-1 max-w-md w-full mx-auto relative flex items-center justify-center">
