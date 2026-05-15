@@ -574,7 +574,7 @@ export default function App() {
         )}
 
         {appState === 'PLAYING' && (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="w-full flex-1 flex items-center justify-center min-h-0">
             {selectedGame === 'HIDDEN_ROLE' ? (
               <HiddenRole 
                 channels={channelsRef.current} 

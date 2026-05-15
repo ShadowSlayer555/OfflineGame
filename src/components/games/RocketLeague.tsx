@@ -412,7 +412,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
   };
 
   return (
-    <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center relative touch-none select-none overflow-hidden" ref={containerRef}>
+    <div className="w-full max-w-md aspect-[3/4] bg-slate-900 flex flex-col items-center justify-center relative touch-none select-none overflow-hidden rounded-[2rem] shadow-2xl" ref={containerRef}>
       
       {/* HUD Info */}
       <div className="absolute top-4 left-0 right-0 flex justify-between px-8 z-20 pointer-events-none">

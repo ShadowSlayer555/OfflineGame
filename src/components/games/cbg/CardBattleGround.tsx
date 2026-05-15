@@ -932,7 +932,7 @@ export function CardBattleGround({ channel, isHost, onBackToLobby }: CBGProps) {
 
   return (
     <div 
-      className="w-full h-full bg-slate-900 flex flex-col relative overflow-hidden select-none touch-none"
+      className="w-full max-w-md aspect-[1/2] bg-slate-900 flex flex-col relative overflow-hidden select-none touch-none rounded-[2rem] shadow-2xl ring-4 ring-slate-900 border border-slate-800"
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
