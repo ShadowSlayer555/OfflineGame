@@ -66,15 +66,20 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
       const myCar = isHost ? gameState.p1 : gameState.p2;
       const b = gameState.ball;
       
-      // Target midpoint between ball and car
-      const targetX = (myCar.x + b.x) / 2;
-      const targetY = (myCar.y + b.y) / 2;
-      
-      // Distance to dynamically zoom out if they are far apart
-      const dist = Math.sqrt((myCar.x - b.x)**2 + (myCar.y - b.y)**2);
-      
-      // Calculate ideal scale (min 0.6, max 1.2 depending on distance)
-      const idealScale = Math.max(0.6, Math.min(1.2, 800 / (dist + 400)));
+      let targetX = WORLD_WIDTH / 2;
+      let targetY = WORLD_HEIGHT / 2;
+      let idealScale = 0.4; // Show whole field by default
+
+      if (gameState.phase === 'PLAYING') {
+          // Weight towards the car, but still include ball
+          targetX = myCar.x * 0.7 + b.x * 0.3;
+          targetY = myCar.y * 0.7 + b.y * 0.3;
+          
+          const dist = Math.sqrt((myCar.x - b.x)**2 + (myCar.y - b.y)**2);
+          
+          // Players POV is too zoomed in, change max to 0.65 and min to 0.4
+          idealScale = Math.max(0.4, Math.min(0.65, 800 / (dist + 600)));
+      }
 
       // Smooth interp
       setCamera(prev => ({
@@ -110,7 +115,11 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
     const leftCrossbar = Bodies.rectangle(75, WORLD_HEIGHT - 250, 150, 20, { isStatic: true });
     const rightCrossbar = Bodies.rectangle(WORLD_WIDTH - 75, WORLD_HEIGHT - 250, 150, 20, { isStatic: true });
 
-    const wallOpts = [ceiling, floor, leftWallTop, rightWallTop, leftWallBot, rightWallBot, leftCrossbar, rightCrossbar];
+    // Ramps leading up to the nets
+    const leftRamp = Bodies.rectangle(160, WORLD_HEIGHT - 15, 200, 40, { isStatic: true, angle: -Math.PI / 8 });
+    const rightRamp = Bodies.rectangle(WORLD_WIDTH - 160, WORLD_HEIGHT - 15, 200, 40, { isStatic: true, angle: Math.PI / 8 });
+
+    const wallOpts = [ceiling, floor, leftWallTop, rightWallTop, leftWallBot, rightWallBot, leftCrossbar, rightCrossbar, leftRamp, rightRamp];
 
     // Dynamic Bodies
     const ball = Bodies.circle(cx, cy, 30, {
@@ -240,10 +249,12 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
              
              // Move horizontally
              if (Math.abs(input.dx) > 0.1) {
-                M.Body.applyForce(car, car.position, { x: input.dx * 0.005, y: 0 });
+                const speed = Math.abs(car.velocity.x);
+                const mult = Math.max(0.2, 1 - (speed / 20));
+                M.Body.applyForce(car, car.position, { x: input.dx * 0.015 * mult, y: 0 });
              } else {
                 // drag
-                M.Body.setVelocity(car, { x: car.velocity.x * 0.9, y: car.velocity.y });
+                M.Body.setVelocity(car, { x: car.velocity.x * 0.85, y: car.velocity.y });
              }
              // Keeps car upright
              if (Math.abs(car.angle) > 0.05) {
@@ -261,7 +272,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
                  const diff = targetAngle - car.angle;
                  // normalize diff
                  const normalizedDiff = Math.atan2(Math.sin(diff), Math.cos(diff));
-                 M.Body.setAngularVelocity(car, car.angularVelocity * 0.9 + normalizedDiff * 0.02);
+                 M.Body.setAngularVelocity(car, car.angularVelocity * 0.9 + normalizedDiff * 0.05);
              } else {
                  M.Body.setAngularVelocity(car, car.angularVelocity * 0.95);
              }
@@ -273,10 +284,10 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
                  M.Body.setVelocity(car, { x: car.velocity.x, y: -15 });
                  (g as any)[jumpResetRef] = false;
              } else if ((g as any)[doubleJumpRef]) {
-                 // Double jump towards pointing direction or straight up
+                 // Double jump towards pointing direction
                  const forceY = -12;
                  M.Body.setVelocity(car, { x: car.velocity.x, y: forceY });
-                 // also apply rotation force if holding stick? Sideswipe does flips, let's keep it simple
+                 M.Body.applyForce(car, car.position, { x: input.dx * 0.02, y: 0 });
                  M.Body.setAngularVelocity(car, car.angularVelocity + (Math.sign(input.dx) * 0.2));
                  (g as any)[doubleJumpRef] = false;
                  (g as any)[jumpResetRef] = false;
@@ -289,8 +300,21 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
           // Boost
           if (input.boost && (g as any)[boostRef] > 0) {
              (g as any)[boostRef] -= BOOST_DRAIN;
-             const forceX = Math.cos(car.angle) * 0.004;
-             const forceY = Math.sin(car.angle) * 0.004;
+             
+             let boostAngle = car.angle;
+             const inputMag = Math.sqrt(input.dx*input.dx + input.dy*input.dy);
+             
+             if (inputMag > 0.1) {
+                 boostAngle = Math.atan2(input.dy, input.dx);
+             } else if (grounded) {
+                 if (Math.abs(car.velocity.x) > 1) {
+                     boostAngle = car.velocity.x > 0 ? 0 : Math.PI;
+                 }
+             }
+
+             // Increased boost for faster launch
+             const forceX = Math.cos(boostAngle) * 0.015;
+             const forceY = Math.sin(boostAngle) * 0.015;
              M.Body.applyForce(car, car.position, { x: forceX, y: forceY });
           }
         };
@@ -412,7 +436,7 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
   };
 
   return (
-    <div className="w-full max-w-md aspect-[3/4] bg-slate-900 flex flex-col items-center justify-center relative touch-none select-none overflow-hidden rounded-[2rem] shadow-2xl" ref={containerRef}>
+    <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center relative touch-none select-none overflow-hidden" ref={containerRef}>
       
       {/* HUD Info */}
       <div className="absolute top-4 left-0 right-0 flex justify-between px-8 z-20 pointer-events-none">
@@ -445,13 +469,17 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
         <div className="absolute left-0 bottom-[100px] w-[150px] h-[250px] border-r-8 border-t-8 border-indigo-500/50 bg-indigo-500/10 rounded-tr-3xl" />
         <div className="absolute right-0 bottom-[100px] w-[150px] h-[250px] border-l-8 border-t-8 border-rose-500/50 bg-rose-500/10 rounded-tl-3xl" />
         
+        {/* Ramps visually */}
+        <div className="absolute bg-slate-700 rounded-lg" style={{ left: 160 - 100, top: WORLD_HEIGHT - 15 - 20, width: 200, height: 40, transform: 'rotate(-22.5deg)' }} />
+        <div className="absolute bg-slate-700 rounded-lg" style={{ left: WORLD_WIDTH - 160 - 100, top: WORLD_HEIGHT - 15 - 20, width: 200, height: 40, transform: 'rotate(22.5deg)' }} />
+
         {/* Floor Line */}
         <div className="absolute left-0 right-0 bottom-[50px] h-2 bg-slate-600 rounded-full" />
 
         {gameState && (
             <>
                {/* Ball */}
-               <div className="absolute top-0 left-0 w-[60px] h-[60px] rounded-full bg-white border-[6px] border-amber-300 shadow-[0_0_30px_rgba(255,200,0,0.5)] flex items-center justify-center will-change-transform"
+               <div className="absolute top-0 left-0 w-[60px] h-[60px] rounded-full bg-white border-[6px] border-amber-300 shadow-[0_0_30px_rgba(255,200,0,0.5)] flex items-center justify-center will-change-transform z-20"
                      style={{
                         transform: `translate(${gameState.ball.x - 30}px, ${gameState.ball.y - 30}px) rotate(${gameState.ball.a}rad)`
                      }}
@@ -460,21 +488,33 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
                 </div>
 
                {/* Player 1 (Indigo) */}
-               <div className="absolute top-0 left-0 w-[80px] h-[40px] will-change-transform"
+               <div className="absolute top-0 left-0 w-[80px] h-[40px] will-change-transform z-20"
                     style={{ transform: `translate(${gameState.p1.x - 40}px, ${gameState.p1.y - 20}px) rotate(${gameState.p1.a}rad)` }}>
-                    <div className="w-full h-full bg-indigo-500 rounded-xl border-[4px] border-indigo-400 relative overflow-hidden shadow-[0_0_20px_rgba(99,102,241,0.5)]">
+                    <div className="w-full h-full bg-indigo-500 rounded-xl border-[4px] border-indigo-400 relative shadow-[0_0_20px_rgba(99,102,241,0.5)] z-20">
                          <div className="absolute right-2 top-1 bottom-1 w-4 bg-indigo-300/50 rounded" />
                          {/* Exhaust visual */}
                          {gameState.p1.b < MAX_BOOST && <div className="absolute left-[-20px] top-1/2 -translate-y-1/2 w-[20px] h-[10px] bg-sky-200 blur-[2px] rounded-full" />}
                     </div>
+                    {/* Wheels */}
+                    <div className="absolute left-[10%] -bottom-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
+                    <div className="absolute right-[10%] -bottom-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
+                    <div className="absolute left-[10%] -top-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
+                    <div className="absolute right-[10%] -top-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
                </div>
 
                {/* Player 2 (Rose) */}
-               <div className="absolute top-0 left-0 w-[80px] h-[40px] will-change-transform"
+               <div className="absolute top-0 left-0 w-[80px] h-[40px] will-change-transform z-20"
                     style={{ transform: `translate(${gameState.p2.x - 40}px, ${gameState.p2.y - 20}px) rotate(${gameState.p2.a}rad)` }}>
-                    <div className="w-full h-full bg-rose-500 rounded-xl border-[4px] border-rose-400 relative overflow-hidden shadow-[0_0_20px_rgba(244,63,94,0.5)]">
+                    <div className="w-full h-full bg-rose-500 rounded-xl border-[4px] border-rose-400 relative shadow-[0_0_20px_rgba(244,63,94,0.5)] z-20">
                          <div className="absolute left-2 top-1 bottom-1 w-4 bg-rose-300/50 rounded" />
+                         {/* Exhaust visual */}
+                         {gameState.p2.b < MAX_BOOST && <div className="absolute right-[-20px] top-1/2 -translate-y-1/2 w-[20px] h-[10px] bg-sky-200 blur-[2px] rounded-full" />}
                     </div>
+                    {/* Wheels */}
+                    <div className="absolute left-[10%] -bottom-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
+                    <div className="absolute right-[10%] -bottom-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
+                    <div className="absolute left-[10%] -top-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
+                    <div className="absolute right-[10%] -top-2 w-4 h-6 bg-slate-900 rounded-[4px] border-2 border-slate-700 z-10" />
                </div>
             </>
         )}

@@ -319,7 +319,7 @@ export default function App() {
         )}
       </header>
 
-      <main className="w-full max-w-lg mx-auto flex-1 flex flex-col items-center justify-center p-6 sm:p-8 relative">
+      <main className={`w-full mx-auto flex-1 flex flex-col items-center justify-center relative ${appState === 'PLAYING' && selectedGame === 'ROCKET_LEAGUE' ? '' : 'max-w-lg p-6 sm:p-8'}`}>
         <button
           onClick={() => setAudioEnabled(!audioEnabled)}
           className="fixed bottom-6 right-6 z-50 p-4 bg-white/90 backdrop-blur border border-neutral-200/60 rounded-full shadow-lg shadow-neutral-900/10 text-neutral-600 hover:text-indigo-600 active:scale-95 transition-all outline-none"
