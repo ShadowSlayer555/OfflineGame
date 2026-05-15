@@ -106,7 +106,7 @@ export default function App() {
 
   // Handle global lobby messages
   useEffect(() => {
-    if ((appState === 'LOBBY' || appState === 'PLAYING' || appState === 'JOIN_ANSWER')) {
+    if ((appState === 'LOBBY' || appState === 'PLAYING' || appState === 'JOIN_ANSWER' || appState === 'JOIN_CONNECTING')) {
       const handleGlobalMessage = (event: MessageEvent) => {
         try {
           const msg: BaseMessage = JSON.parse(event.data);

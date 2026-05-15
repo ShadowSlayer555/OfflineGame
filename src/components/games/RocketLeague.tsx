@@ -107,23 +107,39 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
     const cy = WORLD_HEIGHT / 2;
 
     // Static World
-    const ceiling = Bodies.rectangle(cx, -50, WORLD_WIDTH * 2, 100, { isStatic: true });
-    const floor = Bodies.rectangle(cx, WORLD_HEIGHT + 50, WORLD_WIDTH * 2, 100, { isStatic: true, friction: 0.1 });
-    const leftWallTop = Bodies.rectangle(-25, 100, 50, WORLD_HEIGHT, { isStatic: true });
-    const rightWallTop = Bodies.rectangle(WORLD_WIDTH + 25, 100, 50, WORLD_HEIGHT, { isStatic: true });
-    const leftWallBot = Bodies.rectangle(-25, WORLD_HEIGHT - 100, 50, 200, { isStatic: true });
-    const rightWallBot = Bodies.rectangle(WORLD_WIDTH + 25, WORLD_HEIGHT - 100, 50, 200, { isStatic: true });
+    const ceiling = Bodies.rectangle(WORLD_WIDTH/2, -50, WORLD_WIDTH * 2, 100, { isStatic: true });
+    const floor = Bodies.rectangle(WORLD_WIDTH/2, WORLD_HEIGHT + 50, WORLD_WIDTH * 2, 100, { isStatic: true, friction: 0.1 });
     
-    // Goals: width 150, height 250
-    // To make it a proper box goal, we add crossbars
-    const leftCrossbar = Bodies.rectangle(75, WORLD_HEIGHT - 250, 150, 20, { isStatic: true });
-    const rightCrossbar = Bodies.rectangle(WORLD_WIDTH - 75, WORLD_HEIGHT - 250, 150, 20, { isStatic: true });
+    // Left Wall
+    const leftWallTop = Bodies.rectangle(-25, 125, 50, 250, { isStatic: true });
+    const leftWallBot = Bodies.rectangle(-25, 525, 50, 150, { isStatic: true });
+    // Left Goal
+    const leftGoalBack = Bodies.rectangle(-125, 350, 50, 200, { isStatic: true });
+    const leftGoalTop = Bodies.rectangle(-75, 240, 100, 20, { isStatic: true });
+    const leftGoalBot = Bodies.rectangle(-75, 460, 100, 20, { isStatic: true });
 
-    // Ramps leading up to the nets
-    const leftRamp = Bodies.rectangle(160, WORLD_HEIGHT - 15, 200, 40, { isStatic: true, angle: -Math.PI / 8 });
-    const rightRamp = Bodies.rectangle(WORLD_WIDTH - 160, WORLD_HEIGHT - 15, 200, 40, { isStatic: true, angle: Math.PI / 8 });
+    // Right Wall
+    const rightWallTop = Bodies.rectangle(WORLD_WIDTH + 25, 125, 50, 250, { isStatic: true });
+    const rightWallBot = Bodies.rectangle(WORLD_WIDTH + 25, 525, 50, 150, { isStatic: true });
+    // Right Goal
+    const rightGoalBack = Bodies.rectangle(WORLD_WIDTH + 125, 350, 50, 200, { isStatic: true });
+    const rightGoalTop = Bodies.rectangle(WORLD_WIDTH + 75, 240, 100, 20, { isStatic: true });
+    const rightGoalBot = Bodies.rectangle(WORLD_WIDTH + 75, 460, 100, 20, { isStatic: true });
 
-    const wallOpts = [ceiling, floor, leftWallTop, rightWallTop, leftWallBot, rightWallBot, leftCrossbar, rightCrossbar, leftRamp, rightRamp];
+    const rampW = 200;
+    const rampH = 50;
+    // Ramps
+    const tlRamp = Bodies.rectangle(60, 60, rampW, rampH, { isStatic: true, angle: -Math.PI / 4 });
+    const blRamp = Bodies.rectangle(60, WORLD_HEIGHT - 60, rampW, rampH, { isStatic: true, angle: Math.PI / 4 });
+    const trRamp = Bodies.rectangle(WORLD_WIDTH - 60, 60, rampW, rampH, { isStatic: true, angle: Math.PI / 4 });
+    const brRamp = Bodies.rectangle(WORLD_WIDTH - 60, WORLD_HEIGHT - 60, rampW, rampH, { isStatic: true, angle: -Math.PI / 4 });
+
+    const wallOpts = [
+        ceiling, floor, 
+        leftWallTop, leftWallBot, leftGoalBack, leftGoalTop, leftGoalBot, 
+        rightWallTop, rightWallBot, rightGoalBack, rightGoalTop, rightGoalBot, 
+        tlRamp, blRamp, trRamp, brRamp
+    ];
 
     // Dynamic Bodies
     const ball = Bodies.circle(cx, cy, 30, {
@@ -225,18 +241,19 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
       // Process inputs if playing
       if (g.phase === 'PLAYING') {
         // Goal Check
-        if (b.ball.position.x < 50 && b.ball.position.y > WORLD_HEIGHT - 250) {
+        if (b.ball.position.x < -10 && b.ball.position.y > 250 && b.ball.position.y < 450) {
           const M = MatterPkg.Engine ? MatterPkg : (MatterPkg as any).default || MatterPkg;
           
           g.score2++;
           g.phase = 'GOAL';
           // apply little pop to ball
-          M.Body.applyForce(b.ball, b.ball.position, {x: -0.1, y: -0.1});
+          M.Body.applyForce(b.ball, b.ball.position, {x: -0.05, y: 0});
         }
-        if (b.ball.position.x > WORLD_WIDTH - 50 && b.ball.position.y > WORLD_HEIGHT - 250) {
+        if (b.ball.position.x > WORLD_WIDTH + 10 && b.ball.position.y > 250 && b.ball.position.y < 450) {
+          const M = MatterPkg.Engine ? MatterPkg : (MatterPkg as any).default || MatterPkg;
           g.score1++;
           g.phase = 'GOAL';
-          M.Body.applyForce(b.ball, b.ball.position, {x: 0.1, y: -0.1});
+          M.Body.applyForce(b.ball, b.ball.position, {x: 0.05, y: 0});
         }
 
         const applyInput = (car: any, input: any, isP1: boolean) => {
@@ -472,15 +489,20 @@ export function RocketLeague({ channel, isHost, onBackToLobby }: RocketLeaguePro
           }}
         >
           {/* Goals visually */}
-        <div className="absolute left-0 bottom-[100px] w-[150px] h-[250px] border-r-8 border-t-8 border-indigo-500/50 bg-indigo-500/10 rounded-tr-3xl" />
-        <div className="absolute right-0 bottom-[100px] w-[150px] h-[250px] border-l-8 border-t-8 border-rose-500/50 bg-rose-500/10 rounded-tl-3xl" />
+        <div className="absolute left-[-100px] top-[250px] w-[100px] h-[200px] border-l-8 border-y-8 border-indigo-500/50 bg-indigo-500/10 rounded-l-3xl shadow-[inset_0_0_50px_rgba(99,102,241,0.2)]" />
+        <div className="absolute right-[-100px] top-[250px] w-[100px] h-[200px] border-r-8 border-y-8 border-rose-500/50 bg-rose-500/10 rounded-r-3xl shadow-[inset_0_0_50px_rgba(244,63,94,0.2)]" />
         
         {/* Ramps visually */}
-        <div className="absolute bg-slate-700 rounded-lg" style={{ left: 160 - 100, top: WORLD_HEIGHT - 15 - 20, width: 200, height: 40, transform: 'rotate(-22.5deg)' }} />
-        <div className="absolute bg-slate-700 rounded-lg" style={{ left: WORLD_WIDTH - 160 - 100, top: WORLD_HEIGHT - 15 - 20, width: 200, height: 40, transform: 'rotate(22.5deg)' }} />
+        <div className="absolute bg-slate-700/80" style={{ left: 60 - 100, top: 60 - 25, width: 200, height: 50, transform: 'rotate(-45deg)' }} />
+        <div className="absolute bg-slate-700/80" style={{ left: 60 - 100, top: WORLD_HEIGHT - 60 - 25, width: 200, height: 50, transform: 'rotate(45deg)' }} />
+        <div className="absolute bg-slate-700/80" style={{ left: WORLD_WIDTH - 60 - 100, top: 60 - 25, width: 200, height: 50, transform: 'rotate(45deg)' }} />
+        <div className="absolute bg-slate-700/80" style={{ left: WORLD_WIDTH - 60 - 100, top: WORLD_HEIGHT - 60 - 25, width: 200, height: 50, transform: 'rotate(-45deg)' }} />
 
-        {/* Floor Line */}
-        <div className="absolute left-0 right-0 bottom-[50px] h-2 bg-slate-600 rounded-full" />
+        {/* Outer Bounds styling */}
+        <div className="absolute left-0 top-0 bottom-0 w-2 bg-slate-600 rounded-full" />
+        <div className="absolute right-0 top-0 bottom-0 w-2 bg-slate-600 rounded-full" />
+        <div className="absolute top-0 left-0 right-0 h-2 bg-slate-600 rounded-full" />
+        <div className="absolute bottom-0 left-0 right-0 h-2 bg-slate-600 rounded-full" />
 
         {gameState && (
             <>
