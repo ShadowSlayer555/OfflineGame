@@ -65,7 +65,7 @@ export default function App() {
     const handleGlobalClick = (e: MouseEvent) => {
       if (!hasInteracted) setHasInteracted(true);
       const target = e.target as HTMLElement;
-      if (target.closest('button')) {
+      if (target?.closest && target.closest('button')) {
         triggerHapticClick();
       }
     };
@@ -459,6 +459,16 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans flex flex-col items-center overflow-x-hidden selection:bg-indigo-100">
+      {(!hasInteracted) && (
+        <div className="fixed inset-0 bg-neutral-900/90 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center text-white pointer-events-auto">
+           <Volume2 className="w-16 h-16 mb-4 animate-bounce" />
+           <h2 className="text-4xl font-black mb-2 tracking-tight">Enable Audio</h2>
+           <p className="text-neutral-300 font-medium mb-8 text-center max-w-sm">This app requires audio. Click the button below to grant permission and continue.</p>
+           <button onClick={() => setHasInteracted(true)} className="px-10 py-5 bg-indigo-600 border border-indigo-500 rounded-3xl font-black text-2xl hover:bg-indigo-700 shadow-[0_0_40px_rgba(79,70,229,0.3)] active:scale-95 transition-all text-white">
+              Enter Arcade
+           </button>
+        </div>
+      )}
       {!(appState === 'PLAYING' && selectedGame === 'ROCKET_LEAGUE') && (
       <header className="w-full max-w-lg mx-auto p-5 flex justify-between items-center bg-white/80 backdrop-blur-md shadow-[0_1px_3px_rgb(0_0_0_/_0.05)] sticky top-0 z-50">
         <h1 className="text-xl font-display font-bold flex items-center gap-2 tracking-tight text-neutral-900">

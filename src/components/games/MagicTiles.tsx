@@ -20,14 +20,29 @@ interface Tile {
 
 type SequenceItem = { lane: number, note: string, dt: number };
 
-const MELODY = [
-  "E5", "D#5", "E5", "D#5", "E5", "B4", "D5", "C5", "A4",
-  "C4", "E4", "A4", "B4",
-  "E4", "G#4", "B4", "C5",
-  "E4", "E5", "D#5", "E5", "D#5", "E5", "B4", "D5", "C5", "A4",
-  "C4", "E4", "A4", "B4",
-  "E4", "C5", "B4", "A4"
-];
+const difficultyOffsets = {
+  'Beginner': 0,
+  'Intermediate': 3,
+  'Hard': 6,
+  'Insane': 9
+};
+
+type Difficulty = keyof typeof difficultyOffsets;
+
+const SONGS: Record<string, string[]> = {
+  "Classic": [
+    "E5", "D#5", "E5", "D#5", "E5", "B4", "D5", "C5", "A4",
+    "C4", "E4", "A4", "B4",
+    "E4", "G#4", "B4", "C5",
+    "E4", "E5", "D#5", "E5", "D#5", "E5", "B4", "D5", "C5", "A4",
+    "C4", "E4", "A4", "B4",
+    "E4", "C5", "B4", "A4"
+  ],
+  "Ode To Joy": [
+    "E4", "E4", "F4", "G4", "G4", "F4", "E4", "D4", "C4", "C4", "D4", "E4", "E4", "D4", "D4",
+    "E4", "E4", "F4", "G4", "G4", "F4", "E4", "D4", "C4", "C4", "D4", "E4", "D4", "C4", "C4"
+  ]
+};
 
 const getLaneForNote = (note: string) => {
     let sum = 0;
@@ -39,6 +54,10 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
+  const [inLobby, setInLobby] = useState(true);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>('Beginner');
+  const [selectedSong, setSelectedSong] = useState('Classic');
+
   const [gameOver, setGameOver] = useState<string | null>(null);
   const [lives, setLives] = useState(20);
   const [opponentLives, setOpponentLives] = useState(20);
@@ -74,7 +93,8 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
       const queue: {time: number, lane: number, note: string, speed: number}[] = [];
       let t = (performance.now() / 1000) + 2.0; // 2 seconds prep
       
-      MELODY.forEach(note => {
+      const melody = SONGS[selectedSong] || SONGS['Classic'];
+      melody.forEach(note => {
           queue.push({
              time: t,
              lane: getLaneForNote(note),
@@ -92,7 +112,11 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
         const message = JSON.parse(event.data);
         if (message.type === 'GAME_MESSAGE' && message.game === 'MAGIC_TILES') {
           const data = message.payload;
-          if (data.type === 'UPDATE_LIVES') {
+          if (data.type === 'START_GAME') {
+             setSelectedDifficulty(data.difficulty);
+             setSelectedSong(data.song);
+             setInLobby(false);
+          } else if (data.type === 'UPDATE_LIVES') {
             gameState.current.opponentLives = data.lives;
             setOpponentLives(data.lives);
           } else if (data.type === 'GAME_OVER') {
@@ -114,14 +138,14 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
 
   // Start initial tiles
   useEffect(() => {
-    if (!gameOver && gameState.current.tiles.length === 0 && gameState.current.spawnQueue.length === 0) {
+    if (!inLobby && !gameOver && gameState.current.tiles.length === 0 && gameState.current.spawnQueue.length === 0) {
       setTimeout(() => {
         if (!gameState.current.gameOver) {
             resetGame();
         }
       }, 1000);
     }
-  }, [gameOver]);
+  }, [gameOver, inLobby]);
 
   // Main game loop
   useEffect(() => {
@@ -407,9 +431,9 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
         tiles: [],
         lives: 20,
         opponentLives: 20,
-        round: 1,
+        round: 1 + (difficultyOffsets[selectedDifficulty] || 0),
         phase: 'CHORUS',
-        spawnQueue: generateChorus(1),
+        spawnQueue: generateChorus(1 + (difficultyOffsets[selectedDifficulty] || 0)),
         myHits: [],
         opponentHits: [],
         lastHitTime: 0,
@@ -427,6 +451,58 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
      sendPayload({ type: 'REMATCH' });
      resetGame();
   };
+
+  if (inLobby) {
+      return (
+          <div className="flex flex-col items-center justify-center w-full h-[80vh] pt-4 animate-in fade-in zoom-in-95">
+              <h2 className="text-4xl font-black mb-8 italic tracking-tighter text-indigo-900">MAGIC TILES</h2>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-neutral-200 w-full max-w-sm space-y-6">
+                  <div>
+                      <label className="block text-sm font-bold text-neutral-500 mb-2 uppercase tracking-wider">Select Song</label>
+                      <select 
+                          value={selectedSong} 
+                          onChange={e => setSelectedSong(e.target.value)}
+                          disabled={!isHost}
+                          className="w-full bg-neutral-50 border border-neutral-200 rounded-xl p-3 font-bold text-lg outline-none focus:border-indigo-500"
+                      >
+                          {Object.keys(SONGS).map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                  </div>
+                  <div>
+                      <label className="block text-sm font-bold text-neutral-500 mb-2 uppercase tracking-wider">Difficulty</label>
+                      <select 
+                          value={selectedDifficulty} 
+                          onChange={e => setSelectedDifficulty(e.target.value as Difficulty)}
+                          disabled={!isHost}
+                          className="w-full bg-neutral-50 border border-neutral-200 rounded-xl p-3 font-bold text-lg outline-none focus:border-indigo-500"
+                      >
+                          {Object.keys(difficultyOffsets).map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                  </div>
+                  
+                  {isHost ? (
+                      <button 
+                         onClick={() => {
+                             setInLobby(false);
+                             sendPayload({ type: 'START_GAME', difficulty: selectedDifficulty, song: selectedSong });
+                         }}
+                         className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xl hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-600/20"
+                      >
+                         START GAME
+                      </button>
+                  ) : (
+                      <div className="w-full py-4 bg-neutral-100 text-neutral-400 rounded-2xl font-black text-xl text-center border-2 border-dashed border-neutral-200 animate-pulse">
+                         Waiting for host...
+                      </div>
+                  )}
+                  
+                  <button onClick={onBackToLobby} className="w-full py-3 text-neutral-500 font-bold hover:bg-neutral-50 rounded-xl transition-colors">
+                      Cancel
+                  </button>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="flex flex-col items-center justify-start w-full h-[80vh] pt-4">
