@@ -66,7 +66,7 @@ export const stopMusic = () => {
   currentTrack = null;
 };
 
-export const playMusic = (track: 'LOBBY' | 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE' | 'ROCKET_LEAGUE' | 'CARD_BATTLE') => {
+export const playMusic = (track: 'LOBBY' | 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE' | 'ROCKET_LEAGUE' | 'CARD_BATTLE' | 'MAGIC_TILES') => {
   if (currentTrack === track) return; // Already playing
   if (isMuted) return;
   
@@ -238,3 +238,22 @@ export const playHitSound = () => {
     const synth = getEffectSynth();
     if (synth) synth.triggerAttackRelease("C2", "32n");
 }
+
+let magicSynth: Tone.Synth | null = null;
+const getMagicSynth = () => {
+    if (isMuted) return null;
+    if (!magicSynth) {
+        magicSynth = new Tone.Synth({
+            oscillator: { type: 'triangle' },
+            envelope: { attack: 0.05, decay: 0.1, sustain: 0.2, release: 1 }
+        }).toDestination();
+        magicSynth.volume.value = -8;
+    }
+    return magicSynth;
+}
+
+export const playMagicTileNote = (note: string) => {
+    const synth = getMagicSynth();
+    if (synth) synth.triggerAttackRelease(note, "8n");
+}
+

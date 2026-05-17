@@ -1,4 +1,4 @@
-export type GameType = 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE' | 'CARD_BATTLE' | 'ROCKET_LEAGUE';
+export type GameType = 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE' | 'CARD_BATTLE' | 'ROCKET_LEAGUE' | 'MAGIC_TILES';
 
 export interface BaseMessage {
   type: 'LOBBY_STATE' | 'START_GAME' | 'GAME_MESSAGE' | 'BACK_TO_LOBBY' | 'SET_ID' | 'GO_TO_LOBBY';
@@ -74,6 +74,17 @@ export const GAMES: Record<GameType, { id: GameType; name: string; description: 
       'Use the Jump and Boost buttons on the right to fly.',
       'Hit the ball into the opponent\'s goal to score!',
       'Best of 3 rounds (first to 2 goals).'
+    ]
+  },
+  MAGIC_TILES: {
+    id: 'MAGIC_TILES',
+    name: 'Magic Tiles',
+    description: 'Tap the tiles to send them falling to your opponent!',
+    tutorial: [
+      'Tap the tiles as they appear on your screen.',
+      'Tapping a tile sends it to your opponent.',
+      'If you miss a tile, you lose a life.',
+      'Survive longer than your opponent to win!'
     ]
   }
 };
