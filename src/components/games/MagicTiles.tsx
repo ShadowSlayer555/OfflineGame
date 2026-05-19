@@ -424,7 +424,7 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
 
       container.addEventListener('pointerdown', handlePointerDown);
       return () => container.removeEventListener('pointerdown', handlePointerDown);
-  }, []);
+  }, [inLobby]);
 
   const resetGame = () => {
       gameState.current = {

@@ -53,14 +53,16 @@ export function Pong({ channel, isHost, onBackToLobby }: PongProps) {
         
         if (data.type === 'STATE_SYNC' && !isHost) {
           // Host sends full state to guest
-          theirPaddleRef.current.x = CANVAS_WIDTH - data.myPaddleX - PADDLE_WIDTH; // mirror x
+          theirPaddleRef.current.x = CANVAS_WIDTH - data.theirPaddleX - PADDLE_WIDTH; // mirror x
           ballRef.current = {
             ...data.ball,
             x: CANVAS_WIDTH - data.ball.x, // mirror x
             y: CANVAS_HEIGHT - data.ball.y // mirror y
           };
-          scoreRef.current = data.score;
-          setScores(data.score);
+          if (data.scores) {
+            scoreRef.current = data.scores;
+            setScores(data.scores);
+          }
         } else if (data.type === 'PADDLE_MOVED') {
           // Guest sends paddle to Host (or host to guest, but STATE_SYNC overrides host to guest later)
           theirPaddleRef.current.x = CANVAS_WIDTH - data.x - PADDLE_WIDTH; 
@@ -93,15 +95,18 @@ export function Pong({ channel, isHost, onBackToLobby }: PongProps) {
     };
   }, []);
 
-  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (gameState !== 'PLAYING') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     
+    // Only capture movement if mouse is pressed down or if it's a touch (pointerType === 'touch' happens automatically)
+    // Actually, for mouse we probably want to track even without clicking for better experience:
+    // ... removed the click guard ...
+
     const rect = canvas.getBoundingClientRect();
-    const touch = e.touches[0];
     const scaleX = CANVAS_WIDTH / (rect.width || 1);
-    const x = (touch.clientX - rect.left) * scaleX - PADDLE_WIDTH / 2;
+    const x = (e.clientX - rect.left) * scaleX - PADDLE_WIDTH / 2;
     
     if (!isNaN(x)) {
       myPaddleRef.current.x = Math.max(0, Math.min(x, CANVAS_WIDTH - PADDLE_WIDTH));
@@ -286,7 +291,7 @@ export function Pong({ channel, isHost, onBackToLobby }: PongProps) {
           width={CANVAS_WIDTH}
           height={CANVAS_HEIGHT}
           className="w-full h-full touch-none"
-          onTouchMove={handleTouchMove}
+          onPointerMove={handlePointerMove}
         />
         
         {gameState === 'WAITING' && (

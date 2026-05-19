@@ -97,12 +97,14 @@ export function HiddenRole({ channels, isHost, myId, myName, guests, onBackToLob
     currentLog: string[],
     currentWinner: any,
     currentLynch: any,
-    guestNightResults: Record<string, string> = {}, // targetId -> result message
+    guestNightResults: Record<string, string> | null = {}, // targetId -> result message
     endTime: number | null = null,
     currentVotesPayload: Record<string, string> = {},
     currentWhispers: WhisperMessage[] = []
   ) => {
     if (!isHost) return;
+
+    const safeNightResults = guestNightResults || {};
 
     // Send to each guest individually so they only see their own roles
     guests.forEach(guest => {
@@ -116,7 +118,7 @@ export function HiddenRole({ channels, isHost, myId, myName, guests, onBackToLob
          currentVotes: currentVotesPayload,
          whispers: currentWhispers.filter(w => w.fromId === guest.id || w.toId === guest.id),
          myRole: currentPlayers.find(p => p.id === guest.id)?.role || null,
-         myNightResult: guestNightResults[guest.id] || null,
+         myNightResult: safeNightResults[guest.id] || null,
          players: currentPlayers.map(p => ({
            id: p.id,
            name: p.name,
