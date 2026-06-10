@@ -1,4 +1,4 @@
-export type GameType = 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE' | 'CARD_BATTLE' | 'ROCKET_LEAGUE' | 'MAGIC_TILES';
+export type GameType = 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE' | 'CARD_BATTLE' | 'ROCKET_LEAGUE' | 'MAGIC_TILES' | 'LASER_TAG';
 
 export interface BaseMessage {
   type: 'LOBBY_STATE' | 'START_GAME' | 'GAME_MESSAGE' | 'BACK_TO_LOBBY' | 'SET_ID' | 'GO_TO_LOBBY';
@@ -85,6 +85,17 @@ export const GAMES: Record<GameType, { id: GameType; name: string; description: 
       'Tapping a tile sends it to your opponent.',
       'If you miss a tile, you lose a life.',
       'Survive longer than your opponent to win!'
+    ]
+  },
+  LASER_TAG: {
+    id: 'LASER_TAG',
+    name: 'First Person Laser Tag',
+    description: 'Online Multiplayer 3D Laser Tag!',
+    tutorial: [
+      'Use the joystick on the left to move.',
+      'Swipe anywhere else on the screen to look around.',
+      'Tap the Shoot button on the right to fire your laser.',
+      'First to 5 tags wins the game!'
     ]
   }
 };

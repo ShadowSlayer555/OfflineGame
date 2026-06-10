@@ -18,6 +18,7 @@ import { Tournament } from './components/Tournament';
 import { CardBattleGround } from './components/games/cbg/CardBattleGround';
 import { RocketLeague } from './components/games/RocketLeague';
 import { MagicTiles } from './components/games/MagicTiles';
+import { LaserTagArena } from './components/games/LaserTagArena';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 type AppState =
@@ -469,7 +470,7 @@ export default function App() {
            </button>
         </div>
       )}
-      {!(appState === 'PLAYING' && selectedGame === 'ROCKET_LEAGUE') && (
+      {!(appState === 'PLAYING' && (selectedGame === 'ROCKET_LEAGUE' || selectedGame === 'LASER_TAG')) && (
       <header className="w-full max-w-lg mx-auto p-5 flex justify-between items-center bg-white/80 backdrop-blur-md shadow-[0_1px_3px_rgb(0_0_0_/_0.05)] sticky top-0 z-50">
         <h1 className="text-xl font-display font-bold flex items-center gap-2 tracking-tight text-neutral-900">
           <div className="bg-indigo-600 p-1.5 rounded-lg shadow-sm">
@@ -503,7 +504,7 @@ export default function App() {
       </header>
       )}
 
-      <main className={`w-full mx-auto flex-1 flex flex-col items-center justify-center relative ${appState === 'PLAYING' && selectedGame === 'ROCKET_LEAGUE' ? '' : 'max-w-lg p-6 sm:p-8'}`}>
+      <main className={`w-full mx-auto flex-1 flex flex-col items-center justify-center relative ${appState === 'PLAYING' && (selectedGame === 'ROCKET_LEAGUE' || selectedGame === 'LASER_TAG') ? '' : 'max-w-lg p-6 sm:p-8'}`}>
         <button
           onClick={() => setAudioEnabled(!audioEnabled)}
           className="fixed bottom-6 right-6 z-50 p-4 bg-white/90 backdrop-blur border border-neutral-200/60 rounded-full shadow-lg shadow-neutral-900/10 text-neutral-600 hover:text-indigo-600 active:scale-95 transition-all outline-none"
@@ -872,6 +873,15 @@ export default function App() {
                 myName={playerName}
                 guests={connectedGuests}
                 onBackToLobby={handleBackToLobby} 
+              />
+            ) : selectedGame === 'LASER_TAG' ? (
+              <LaserTagArena
+                channels={channelsRef.current}
+                isHost={isHostRole}
+                myId={isHostRole ? 'host' : (myGuestId || 'player-joiner')}
+                myName={playerName}
+                guests={connectedGuests}
+                onBackToLobby={handleBackToLobby}
               />
             ) : connectedGuests.length > 1 ? (
               <Tournament

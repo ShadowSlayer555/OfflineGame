@@ -23,50 +23,104 @@ export function Lobby({ isHost, selectedGame, onSelectGame, onStartGame }: Lobby
         </p>
       </div>
 
-      <div className="space-y-4 pt-2 flex-1">
-        {Object.values(GAMES).map((game) => {
-          const isSelected = selectedGame === game.id;
-          return (
-            <div key={game.id} className="relative group">
-              <button
-                onClick={() => isHost && onSelectGame(game.id)}
-                disabled={!isHost}
-                className={`w-full text-left p-5 rounded-2xl border-2 transition-all duration-200 outline-none focus-visible:ring-4 focus-visible:ring-indigo-100 ${
-                  isSelected
-                    ? 'border-indigo-600 bg-indigo-50/50 shadow-sm'
-                    : 'border-white bg-white shadow-sm hover:border-indigo-200 hover:shadow-md'
-                } ${!isHost && 'cursor-default opacity-80'}`}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className={`text-lg font-display font-bold tracking-tight ${isSelected ? 'text-indigo-900' : 'text-neutral-900'}`}>
-                      {game.name}
-                    </h3>
-                    <p className={`text-sm mt-1 leading-relaxed ${isSelected ? 'text-indigo-700/80' : 'text-neutral-500'}`}>
-                      {game.description}
-                    </p>
-                  </div>
-                  <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-1 transition-colors ${isSelected ? 'border-indigo-600 bg-indigo-600' : 'border-neutral-300'}`}>
-                    {isSelected && <div className="w-full h-full rounded-full border-2 border-indigo-50 bg-indigo-600"></div>}
-                  </div>
+      <div className="space-y-6 pt-2 flex-1 overflow-y-auto pb-4 px-1">
+        <div>
+           <h3 className="text-sm font-bold text-neutral-400 uppercase tracking-widest mb-3 pl-2">Local/Offline Games</h3>
+           <div className="space-y-4">
+            {Object.values(GAMES).filter(g => g.id !== 'LASER_TAG').map((game) => {
+              const isSelected = selectedGame === game.id;
+              return (
+                <div key={game.id} className="relative group">
+                  <button
+                    onClick={() => isHost && onSelectGame(game.id)}
+                    disabled={!isHost}
+                    className={`w-full text-left p-5 rounded-2xl border-2 transition-all duration-200 outline-none focus-visible:ring-4 focus-visible:ring-indigo-100 ${
+                      isSelected
+                        ? 'border-indigo-600 bg-indigo-50/50 shadow-sm'
+                        : 'border-white bg-white shadow-sm hover:border-indigo-200 hover:shadow-md'
+                    } ${!isHost && 'cursor-default opacity-80'}`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className={`text-lg font-display font-bold tracking-tight ${isSelected ? 'text-indigo-900' : 'text-neutral-900'}`}>
+                          {game.name}
+                        </h3>
+                        <p className={`text-sm mt-1 leading-relaxed ${isSelected ? 'text-indigo-700/80' : 'text-neutral-500'}`}>
+                          {game.description}
+                        </p>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-1 transition-colors ${isSelected ? 'border-indigo-600 bg-indigo-600' : 'border-neutral-300'}`}>
+                        {isSelected && <div className="w-full h-full rounded-full border-2 border-indigo-50 bg-indigo-600"></div>}
+                      </div>
+                    </div>
+                  </button>
+                  
+                  {isSelected && (
+                    <div className="mt-3 mx-2 p-5 bg-indigo-50/80 backdrop-blur-sm border border-indigo-100/50 rounded-xl animate-in fade-in slide-in-from-top-2">
+                      <h4 className="flex items-center gap-2 font-display font-bold text-indigo-900 mb-3 text-xs uppercase tracking-widest opacity-80">
+                        <Info className="w-4 h-4" /> How to Play
+                      </h4>
+                      <ul className="list-disc list-outside pl-5 space-y-2 text-sm text-indigo-900/80 leading-relaxed font-medium">
+                        {game.tutorial.map((line, idx) => (
+                          <li key={idx} className="pl-1 leading-snug">{line}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              </button>
-              
-              {isSelected && (
-                <div className="mt-3 mx-2 p-5 bg-indigo-50/80 backdrop-blur-sm border border-indigo-100/50 rounded-xl animate-in fade-in slide-in-from-top-2">
-                  <h4 className="flex items-center gap-2 font-display font-bold text-indigo-900 mb-3 text-xs uppercase tracking-widest opacity-80">
-                    <Info className="w-4 h-4" /> How to Play
-                  </h4>
-                  <ul className="list-disc list-outside pl-5 space-y-2 text-sm text-indigo-900/80 leading-relaxed font-medium">
-                    {game.tutorial.map((line, idx) => (
-                      <li key={idx} className="pl-1 leading-snug">{line}</li>
-                    ))}
-                  </ul>
+              );
+            })}
+           </div>
+        </div>
+
+        <div>
+           <h3 className="text-sm font-bold text-neutral-400 uppercase tracking-widest mb-3 pl-2">Online 3D Games</h3>
+           <div className="space-y-4">
+            {Object.values(GAMES).filter(g => g.id === 'LASER_TAG').map((game) => {
+              const isSelected = selectedGame === game.id;
+              return (
+                <div key={game.id} className="relative group">
+                  <button
+                    onClick={() => isHost && onSelectGame(game.id)}
+                    disabled={!isHost}
+                    className={`w-full text-left p-5 rounded-2xl border-2 transition-all duration-200 outline-none focus-visible:ring-4 focus-visible:ring-indigo-100 ${
+                      isSelected
+                        ? 'border-indigo-600 bg-indigo-50/50 shadow-sm'
+                        : 'border-white bg-white shadow-sm hover:border-indigo-200 hover:shadow-md'
+                    } ${!isHost && 'cursor-default opacity-80'}`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className={`text-lg font-display font-bold tracking-tight ${isSelected ? 'text-indigo-900' : 'text-neutral-900'}`}>
+                          {game.name}
+                        </h3>
+                        <p className={`text-sm mt-1 leading-relaxed ${isSelected ? 'text-indigo-700/80' : 'text-neutral-500'}`}>
+                          {game.description}
+                        </p>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-1 transition-colors ${isSelected ? 'border-indigo-600 bg-indigo-600' : 'border-neutral-300'}`}>
+                        {isSelected && <div className="w-full h-full rounded-full border-2 border-indigo-50 bg-indigo-600"></div>}
+                      </div>
+                    </div>
+                  </button>
+                  
+                  {isSelected && (
+                    <div className="mt-3 mx-2 p-5 bg-indigo-50/80 backdrop-blur-sm border border-indigo-100/50 rounded-xl animate-in fade-in slide-in-from-top-2">
+                      <h4 className="flex items-center gap-2 font-display font-bold text-indigo-900 mb-3 text-xs uppercase tracking-widest opacity-80">
+                        <Info className="w-4 h-4" /> How to Play
+                      </h4>
+                      <ul className="list-disc list-outside pl-5 space-y-2 text-sm text-indigo-900/80 leading-relaxed font-medium">
+                        {game.tutorial.map((line, idx) => (
+                          <li key={idx} className="pl-1 leading-snug">{line}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })}
+           </div>
+        </div>
       </div>
 
       {isHost ? (

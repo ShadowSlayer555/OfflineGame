@@ -44,10 +44,10 @@ const SONGS: Record<string, string[]> = {
   ]
 };
 
-const getLaneForNote = (note: string) => {
+const getLaneForNote = (note: string, mode: 'Portrait' | 'Landscape') => {
     let sum = 0;
     for (let i = 0; i < note.length; i++) sum += note.charCodeAt(i);
-    return sum % 4;
+    return sum % (mode === 'Landscape' ? 8 : 4);
 };
 
 export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) {
@@ -57,6 +57,7 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
   const [inLobby, setInLobby] = useState(true);
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>('Beginner');
   const [selectedSong, setSelectedSong] = useState('Classic');
+  const [selectedMode, setSelectedMode] = useState<'Portrait' | 'Landscape'>('Portrait');
 
   const [gameOver, setGameOver] = useState<string | null>(null);
   const [lives, setLives] = useState(20);
@@ -85,7 +86,7 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
 
   const broadcastInfo = useRef<{ type: string; [key: string]: any }[]>([]);
 
-  const generateChorus = (round: number) => {
+  const generateChorus = (round: number, mode: 'Portrait' | 'Landscape') => {
       const baseSpeed = 0.4 * Math.pow(1.15, round - 1);
       const targetDistance = 0.4 * 0.5; // fixed distance interval
       const currentDt = targetDistance / baseSpeed;
@@ -97,7 +98,7 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
       melody.forEach(note => {
           queue.push({
              time: t,
-             lane: getLaneForNote(note),
+             lane: getLaneForNote(note, mode),
              note: note,
              speed: baseSpeed
           });
@@ -115,6 +116,7 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
           if (data.type === 'START_GAME') {
              setSelectedDifficulty(data.difficulty);
              setSelectedSong(data.song);
+             if (data.mode) setSelectedMode(data.mode);
              setInLobby(false);
           } else if (data.type === 'UPDATE_LIVES') {
             gameState.current.opponentLives = data.lives;
@@ -150,12 +152,30 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
   // Main game loop
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    // Dynamically size canvas
+    const resizeObserver = new ResizeObserver(entries => {
+      for (let entry of entries) {
+         canvas.width = entry.contentRect.width;
+         canvas.height = entry.contentRect.height;
+      }
+    });
+    resizeObserver.observe(container);
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     let lastTime = performance.now();
     let reqId: number;
+    const isLandscape = selectedMode === 'Landscape';
+    const lanesCount = isLandscape ? 8 : 4;
+
+    const mapT = (t: number) => {
+       if (t < 0) return t; 
+       return Math.pow(t, 2.0);
+    };
 
     const draw = (time: number) => {
       const nowSec = time / 1000;
@@ -192,7 +212,7 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
                       t += safeDt;
                       state.spawnQueue.push({
                           time: t,
-                          lane: 3 - hit.lane, // Mirror!
+                          lane: (lanesCount - 1) - hit.lane, // Mirror!
                           note: hit.note,
                           speed: baseSpeed
                       });
@@ -206,7 +226,7 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
                   state.myHits = [];
                   state.opponentHits = [];
                   state.lastHitTime = 0;
-                  state.spawnQueue = generateChorus(state.round);
+                  state.spawnQueue = generateChorus(state.round, selectedMode);
               }
           }
 
@@ -259,65 +279,186 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
       }
 
       // Render
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.clearRect(0, 0, w, h);
+      const w = canvas.width || 1; // fallback
+      const h = canvas.height || 1;
+
+      if (isLandscape) {
+          ctx.fillStyle = '#0a0a2a'; // Deep space background
+          ctx.fillRect(0, 0, w, h);
+      } else {
+          ctx.clearRect(0, 0, w, h);
+      }
+
+      const horizonY = isLandscape ? h * 0.2 : 0;
+      const tapLineY = isLandscape ? h * 0.85 : h * 0.75;
+      
+      const getRealY = (t: number) => {
+          if (!isLandscape) return t * h;
+          return horizonY + mapT(t) * (tapLineY - horizonY);
+      };
+
+      const getLaneX = (t: number, laneIndex: number) => {
+          if (!isLandscape) return (w / lanesCount) * laneIndex;
+          const mappedT = mapT(t);
+          const topWidth = w * 0.3; // width at horizon
+          const bottomWidth = w * 1.2; // width at tap line (off edges)
+          const currentW = topWidth + mappedT * (bottomWidth - topWidth);
+          const xCenter = w / 2;
+          const xLeft = xCenter - currentW / 2;
+          return xLeft + (currentW / lanesCount) * laneIndex;
+      };
 
       // Draw error background
-      const laneWidth = w / 4;
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < lanesCount; i++) {
         const errorLane = gameState.current.errorLanes.find(e => e.lane === i);
         if (errorLane && nowSec - errorLane.time < 0.2) {
-             ctx.fillStyle = 'rgba(239, 68, 68, 0.2)'; // red-500
-             ctx.fillRect(i * laneWidth, 0, laneWidth, h);
+             if (isLandscape) {
+                 ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
+                 ctx.beginPath();
+                 ctx.moveTo(getLaneX(0, i), getRealY(0));
+                 ctx.lineTo(getLaneX(0, i+1), getRealY(0));
+                 ctx.lineTo(getLaneX(1.5, i+1), getRealY(1.5));
+                 ctx.lineTo(getLaneX(1.5, i), getRealY(1.5));
+                 ctx.fill();
+             } else {
+                 ctx.fillStyle = 'rgba(239, 68, 68, 0.2)'; 
+                 ctx.fillRect(i * (w/lanesCount), 0, w/lanesCount, h);
+             }
         }
       }
 
-      ctx.strokeStyle = '#e5e7eb';
+      // Grid Lines
+      ctx.strokeStyle = isLandscape ? 'rgba(255, 255, 255, 0.15)' : '#e5e7eb';
       ctx.lineWidth = 2;
-      for (let i = 1; i < 4; i++) {
+      for (let i = (isLandscape ? 0 : 1); i <= lanesCount; i++) {
+        if (!isLandscape && i === lanesCount) continue; // portrait logic matches old
         ctx.beginPath();
-        ctx.moveTo(i * laneWidth, 0);
-        ctx.lineTo(i * laneWidth, h);
+        if (isLandscape) {
+            ctx.moveTo(getLaneX(0, i), getRealY(0));
+            ctx.lineTo(getLaneX(1.5, i), getRealY(1.5)); 
+        } else {
+            ctx.moveTo(i * (w/lanesCount), 0);
+            ctx.lineTo(i * (w/lanesCount), h);
+        }
         ctx.stroke();
       }
 
       // Draw hit zone
-      const hitStart = h * 0.75;
-      const hitEnd = h * 0.95;
-      ctx.fillStyle = 'rgba(99, 102, 241, 0.1)';
-      ctx.fillRect(0, hitStart, w, hitEnd - hitStart);
-      ctx.strokeStyle = '#6366f1';
-      ctx.beginPath();
-      ctx.moveTo(0, hitStart);
-      ctx.lineTo(w, hitStart);
-      ctx.moveTo(0, hitEnd);
-      ctx.lineTo(w, hitEnd);
-      ctx.stroke();
+      if (isLandscape) {
+          const hitZoneTop = getRealY(0.65);
+          const hitZoneBottom = getRealY(1.05);
+          
+          ctx.fillStyle = 'rgba(99, 102, 241, 0.15)';
+          ctx.beginPath();
+          ctx.moveTo(getLaneX(0.65, 0), hitZoneTop);
+          ctx.lineTo(getLaneX(0.65, lanesCount), hitZoneTop);
+          ctx.lineTo(getLaneX(1.05, lanesCount), hitZoneBottom);
+          ctx.lineTo(getLaneX(1.05, 0), hitZoneBottom);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.strokeStyle = '#818cf8';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(getLaneX(0.85, 0), getRealY(0.85));
+          ctx.lineTo(getLaneX(0.85, lanesCount), getRealY(0.85));
+          ctx.stroke();
+      } else {
+          const hitStart = h * 0.75;
+          const hitEnd = h * 0.95;
+          ctx.fillStyle = 'rgba(99, 102, 241, 0.1)';
+          ctx.fillRect(0, hitStart, w, hitEnd - hitStart);
+          ctx.strokeStyle = '#6366f1';
+          ctx.beginPath();
+          ctx.moveTo(0, hitStart);
+          ctx.lineTo(w, hitStart);
+          ctx.moveTo(0, hitEnd);
+          ctx.lineTo(w, hitEnd);
+          ctx.stroke();
+      }
 
       // Draw tiles
       gameState.current.tiles.forEach(t => {
-          const x = t.lane * laneWidth;
-          const ty = t.y * h;
-          const tileHeight = h * 0.15;
+          const tileLen = isLandscape ? 0.08 : 0.15;
           
           if (t.direction === 'down') {
-              ctx.fillStyle = '#1f2937'; // slate-800
-              ctx.fillRect(x + 5, ty, laneWidth - 10, tileHeight);
+              if (isLandscape) {
+                  const yBottom = getRealY(t.y);
+                  const yTop = getRealY(t.y - tileLen);
+                  
+                  const xBL = getLaneX(t.y, t.lane);
+                  const xBR = getLaneX(t.y, t.lane + 1);
+                  const xTL = getLaneX(t.y - tileLen, t.lane);
+                  const xTR = getLaneX(t.y - tileLen, t.lane + 1);
+                  
+                  ctx.fillStyle = '#34D399'; // vivid emerald
+                  ctx.beginPath();
+                  const padB = (xBR - xBL) * 0.05;
+                  const padT = (xTR - xTL) * 0.05;
+
+                  ctx.moveTo(xTL + padT, yTop);
+                  ctx.lineTo(xTR - padT, yTop);
+                  ctx.lineTo(xBR - padB, yBottom);
+                  ctx.lineTo(xBL + padB, yBottom);
+                  ctx.closePath();
+                  ctx.fill();
+
+                  ctx.strokeStyle = '#6EE7B7';
+                  ctx.lineWidth = 2;
+                  ctx.stroke();
+
+              } else {
+                  const x = t.lane * (w / lanesCount);
+                  const ty = t.y * h;
+                  const tileHeight = h * 0.15;
+                  ctx.fillStyle = '#1f2937';
+                  ctx.fillRect(x + 5, ty, (w/lanesCount) - 10, tileHeight);
+              }
           } else {
-               // Flying up - add visual trail
-               ctx.fillStyle = '#6366f1'; // indigo-500
-               ctx.fillRect(x + 5, ty, laneWidth - 10, tileHeight);
-               ctx.globalAlpha = 0.3;
-               ctx.fillRect(x + 5, ty + tileHeight, laneWidth - 10, tileHeight * 1.5);
-               ctx.globalAlpha = 1.0;
-               
-               if (t.hitState) {
-                  ctx.fillStyle = 'white';
-                  ctx.font = 'bold 20px inter';
-                  ctx.textAlign = 'center';
-                  ctx.fillText(t.hitState.toUpperCase(), x + laneWidth/2, ty + tileHeight/2 + 7);
-               }
+              // Flying up
+              if (isLandscape) {
+                  const yBottom = getRealY(t.y + tileLen * 2);
+                  const yTop = getRealY(t.y); 
+                  
+                  const xBL = getLaneX(t.y + tileLen * 2, t.lane);
+                  const xBR = getLaneX(t.y + tileLen * 2, t.lane + 1);
+                  const xTL = getLaneX(t.y, t.lane);
+                  const xTR = getLaneX(t.y, t.lane + 1);
+
+                  ctx.fillStyle = '#FBBF24'; // yellow glow
+                  ctx.globalAlpha = 0.6;
+                  ctx.beginPath();
+                  ctx.moveTo(xTL, yTop);
+                  ctx.lineTo(xTR, yTop);
+                  ctx.lineTo(xBR, yBottom);
+                  ctx.lineTo(xBL, yBottom);
+                  ctx.fill();
+                  ctx.globalAlpha = 1.0;
+                  
+                  if (t.hitState) {
+                      ctx.fillStyle = 'white';
+                      ctx.font = 'bold 24px sans-serif';
+                      ctx.textAlign = 'center';
+                      const midX = (xTL + xTR) / 2;
+                      const textY = yTop - 20;
+                      ctx.fillText(t.hitState.toUpperCase(), midX, textY);
+                  }
+              } else {
+                 const x = t.lane * (w / lanesCount);
+                 const ty = t.y * h;
+                 const tileHeight = h * 0.15;
+                 ctx.fillStyle = '#6366f1';
+                 ctx.fillRect(x + 5, ty, (w/lanesCount) - 10, tileHeight);
+                 ctx.globalAlpha = 0.3;
+                 ctx.fillRect(x + 5, ty + tileHeight, (w/lanesCount) - 10, tileHeight * 1.5);
+                 ctx.globalAlpha = 1.0;
+                 if (t.hitState) {
+                    ctx.fillStyle = 'white';
+                    ctx.font = 'bold 20px inter';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(t.hitState.toUpperCase(), x + (w/lanesCount)/2, ty + tileHeight/2 + 7);
+                 }
+              }
           }
       });
 
@@ -325,8 +466,11 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
     };
 
     reqId = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(reqId);
-  }, [inLobby]);
+    return () => {
+        cancelAnimationFrame(reqId);
+        resizeObserver.disconnect();
+    };
+  }, [inLobby, selectedMode]);
 
   const sendPayload = (payload: any) => {
     if (channel.readyState === 'open') {
@@ -412,19 +556,47 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
       const container = containerRef.current;
       if (!container) return;
 
+      const isLandscape = selectedMode === 'Landscape';
+      const lanesCount = isLandscape ? 8 : 4;
+
       const handlePointerDown = (e: PointerEvent) => {
          e.preventDefault();
          const rect = container.getBoundingClientRect();
          const x = e.clientX - rect.left;
-         const lane = Math.floor((x / rect.width) * 4);
-         if (lane >= 0 && lane <= 3) {
-             handleTap(lane);
+         
+         let tappedLane = -1;
+         
+         if (isLandscape) {
+             const tEval = 0.85; 
+             const topWidth = rect.width * 0.3;
+             const bottomWidth = rect.width * 1.2;
+             const mappedTEval = Math.pow(tEval, 2.0);
+             const currentW = topWidth + mappedTEval * (bottomWidth - topWidth);
+             const xCenterEval = rect.width / 2;
+             const xLeftEval = xCenterEval - currentW / 2;
+             
+             for (let i=0; i < lanesCount; i++) {
+                 const xL = xLeftEval + (currentW / lanesCount) * i;
+                 const xR = xLeftEval + (currentW / lanesCount) * (i + 1);
+                 
+                 // Add robust grace padding horizontally so taps aren't too strict
+                 if (x >= (xL - 10) && x < (xR + 10)) {
+                     // In case of overlap grace, pick closest center
+                     tappedLane = i;
+                 }
+             }
+         } else {
+             tappedLane = Math.floor((x / rect.width) * 4);
+         }
+
+         if (tappedLane >= 0 && tappedLane <= (lanesCount - 1)) {
+             handleTap(tappedLane);
          }
       };
 
       container.addEventListener('pointerdown', handlePointerDown);
       return () => container.removeEventListener('pointerdown', handlePointerDown);
-  }, [inLobby]);
+  }, [inLobby, selectedMode]);
 
   const resetGame = () => {
       gameState.current = {
@@ -433,7 +605,7 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
         opponentLives: 20,
         round: 1 + (difficultyOffsets[selectedDifficulty] || 0),
         phase: 'CHORUS',
-        spawnQueue: generateChorus(1 + (difficultyOffsets[selectedDifficulty] || 0)),
+        spawnQueue: generateChorus(1 + (difficultyOffsets[selectedDifficulty] || 0), selectedMode),
         myHits: [],
         opponentHits: [],
         lastHitTime: 0,
@@ -454,7 +626,7 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
 
   if (inLobby) {
       return (
-          <div className="flex flex-col items-center justify-center w-full h-[80vh] pt-4 animate-in fade-in zoom-in-95">
+          <div className="flex flex-col items-center justify-center w-full min-h-[80vh] py-8 animate-in fade-in zoom-in-95">
               <h2 className="text-4xl font-black mb-8 italic tracking-tighter text-indigo-900">MAGIC TILES</h2>
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-neutral-200 w-full max-w-sm space-y-6">
                   <div>
@@ -479,12 +651,24 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
                           {Object.keys(difficultyOffsets).map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
                   </div>
+                  <div>
+                      <label className="block text-sm font-bold text-neutral-500 mb-2 uppercase tracking-wider">Orientation Mode</label>
+                      <select 
+                          value={selectedMode} 
+                          onChange={e => setSelectedMode(e.target.value as 'Portrait' | 'Landscape')}
+                          disabled={!isHost}
+                          className="w-full bg-neutral-50 border border-neutral-200 rounded-xl p-3 font-bold text-lg outline-none focus:border-indigo-500"
+                      >
+                          <option value="Portrait">Portrait (4 Keys)</option>
+                          <option value="Landscape">Perspective (8 Keys)</option>
+                      </select>
+                  </div>
                   
                   {isHost ? (
                       <button 
                          onClick={() => {
                              setInLobby(false);
-                             sendPayload({ type: 'START_GAME', difficulty: selectedDifficulty, song: selectedSong });
+                             sendPayload({ type: 'START_GAME', difficulty: selectedDifficulty, song: selectedSong, mode: selectedMode });
                          }}
                          className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xl hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-600/20"
                       >
@@ -504,9 +688,11 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
       );
   }
 
+  const isLandscape = selectedMode === 'Landscape';
+
   return (
-    <div className="flex flex-col items-center justify-start w-full h-[80vh] pt-4">
-      <div className="flex w-full max-w-md justify-between items-center px-4 mb-2">
+    <div className={`flex flex-col items-center justify-start w-full min-h-[80vh] ${isLandscape ? 'md:h-[90vh]' : ''} pt-4`}>
+      <div className="flex w-full max-w-4xl justify-between items-center px-4 mb-2">
          <div className="flex flex-col">
             <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">You</span>
             <div className="flex gap-1 mt-1">
@@ -526,28 +712,31 @@ export function MagicTiles({ channel, isHost, onBackToLobby }: MagicTilesProps) 
          </div>
       </div>
 
-      <div className="relative w-full max-w-md bg-white border-2 border-gray-200 rounded-3xl overflow-hidden shadow-sm flex-1 mb-6 mt-2 touch-none select-none" ref={containerRef}>
+      <div 
+         ref={containerRef}
+         className={`relative w-full ${isLandscape ? 'max-w-[100vw] lg:max-w-5xl bg-[#0a0a2a] border-gray-800' : 'max-w-md bg-white border-gray-200'} border-2 rounded-3xl overflow-hidden shadow-sm flex-1 mb-6 mt-2 touch-none select-none`}
+      >
          <canvas 
             ref={canvasRef}
-            width={400}
-            height={600}
-            className="w-full h-full object-cover touch-none"
+            className="w-full h-full object-cover touch-none block"
          />
          
          {/* Instruction Overlay */}
          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none opacity-20">
-             <div className="text-2xl font-black tracking-widest uppercase">Tap Lanes</div>
-             <div className="text-sm font-bold">To play music & attack!</div>
+             <div className={`text-2xl font-black tracking-widest uppercase ${isLandscape ? 'text-white' : 'text-black'}`}>Tap Lanes</div>
+             <div className={`text-sm font-bold ${isLandscape ? 'text-gray-300' : 'text-gray-600'}`}>To play music & attack!</div>
          </div>
 
-         {/* Base Piano Keys Visual */}
-         <div className="absolute bottom-0 left-0 right-0 h-24 flex pointer-events-none">
-             {[0,1,2,3].map(i => (
-                 <div key={i} className="flex-1 border-r last:border-r-0 border-gray-300 relative">
-                     <div className="absolute bottom-2 left-2 right-2 h-16 bg-gray-100 rounded-xl border-b-4 border-gray-300 shadow-inner"></div>
-                 </div>
-             ))}
-         </div>
+         {/* Base Piano Keys Visual for Portrait Only */}
+         {!isLandscape && (
+             <div className="absolute bottom-0 left-0 right-0 h-24 flex pointer-events-none">
+                 {[0,1,2,3].map(i => (
+                     <div key={i} className="flex-1 border-r last:border-r-0 border-gray-300 relative">
+                         <div className="absolute bottom-2 left-2 right-2 h-16 bg-gray-100 rounded-xl border-b-4 border-gray-300 shadow-inner"></div>
+                     </div>
+                 ))}
+             </div>
+         )}
 
          {gameOver && (
             <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-6 animate-in fade-in">

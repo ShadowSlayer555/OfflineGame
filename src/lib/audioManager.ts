@@ -66,7 +66,7 @@ export const stopMusic = () => {
   currentTrack = null;
 };
 
-export const playMusic = (track: 'LOBBY' | 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE' | 'ROCKET_LEAGUE' | 'CARD_BATTLE' | 'MAGIC_TILES') => {
+export const playMusic = (track: 'LOBBY' | 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDEN_ROLE' | 'ROCKET_LEAGUE' | 'CARD_BATTLE' | 'MAGIC_TILES' | 'LASER_TAG') => {
   if (currentTrack === track) return; // Already playing
   if (isMuted) return;
   
@@ -173,7 +173,7 @@ export const playMusic = (track: 'LOBBY' | 'TAP_WAR' | 'PONG' | 'CHESS' | 'HIDDE
       loop.start(0);
       Tone.Transport.bpm.value = 60;
       
-    } else if (track === 'ROCKET_LEAGUE' || track === 'CARD_BATTLE') {
+    } else if (track === 'ROCKET_LEAGUE' || track === 'CARD_BATTLE' || track === 'LASER_TAG') {
       // Fast paced EDM feel
       const synth = new Tone.FMSynth({
         harmonicity: 1.5,
@@ -255,5 +255,18 @@ const getMagicSynth = () => {
 export const playMagicTileNote = (note: string) => {
     const synth = getMagicSynth();
     if (synth) synth.triggerAttackRelease(note, "8n");
+}
+
+export const playSound = (freq: number | string, type: Tone.ToneOscillatorType, duration: number) => {
+    if (isMuted) return;
+    try {
+        const synth = new Tone.Synth({
+            oscillator: { type },
+            envelope: { attack: 0.01, decay: duration, sustain: 0, release: 0.1 }
+        }).toDestination();
+        synth.volume.value = -12;
+        synth.triggerAttackRelease(freq, duration);
+        setTimeout(() => synth.dispose(), duration * 1000 + 500);
+    } catch (e) {}
 }
 
