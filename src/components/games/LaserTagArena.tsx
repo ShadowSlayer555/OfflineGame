@@ -283,7 +283,7 @@ export function LaserTagArena({ channels, isHost, myId, myName, guests, onBackTo
       setAmmoUI(state.ammo[state.weaponId]);
 
       // Apply Recoil & Shake
-      inputRef.current.pitch -= weapon.recoilPitch;
+      inputRef.current.pitch += weapon.recoilPitch;
       inputRef.current.pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, inputRef.current.pitch));
       cameraEffectRef.current.shake = weapon.recoilShake;
 
